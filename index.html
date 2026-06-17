@@ -1023,8 +1023,9 @@ footer{background:var(--bg);border-top:1px solid var(--border);padding:60px 40px
   </div>
   <div class="footer-bottom">
     <span>© 2025 EvgenyTarget</span>
-    <span id="easter-trigger" style="cursor:pointer;color:var(--text3);font-size:24px;font-weight:700;line-height:1.5;" onclick="triggerEaster()" title="🔐">👀 🎉 Молодцы! До этого места доходят менее 5% предпринимателей.
-<br>🔐 Нажмите и введите код: <strong>АВТОПИЛОТ</strong>
+    <span id="easter-trigger" style="cursor:pointer;color:var(--text3);font-size:16px;font-weight:600;line-height:1.6;text-align:center;padding:10px 0;" onclick="triggerEaster()" title="🔐">👀 🔐 <strong>Секретный бонус</strong><br>
+До этого места доходят менее 5% предпринимателей.<br>
+Введите код: <strong>АВТОПИЛОТ</strong>
 </span>
   </div>
 </footer>
@@ -1223,7 +1224,9 @@ const botReplies={
 let currentBot='cafe';
 function loadBot(type){
   document.querySelectorAll('.sim-cat').forEach(c=>c.classList.remove('active'));
-  event.target.classList.add('active');
+  if(window.event && window.event.target){
+  window.event.target.classList.add('active');
+}
   currentBot=type;
   const bot=bots[type];
   document.getElementById('sim-name').textContent=bot.name;
