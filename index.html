@@ -1258,7 +1258,7 @@ loadBot('cafe');
 let urgencyBase=0;
 const urgencyObs=new IntersectionObserver(entries=>{
   if(entries[0].isIntersecting&&urgencyBase===0){
-    const start=Date.now();const perSec=1840/86400;
+    const start=Date.now();const perSec=184000/86400;
     setInterval(()=>{
       urgencyBase=Math.floor((Date.now()-start)/1000*perSec);
       document.getElementById('urgency-num').textContent=urgencyBase.toLocaleString('ru');
