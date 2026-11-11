@@ -1,191 +1,124 @@
 package kg.evgeny.moidengi;
 
 import android.app.Activity;
-import android.content.ActivityNotFoundException;
-import android.content.Intent;
-import android.graphics.Color;
-import android.graphics.Typeface;
-import android.graphics.drawable.GradientDrawable;
-import android.net.Uri;
 import android.os.Bundle;
-import android.view.Gravity;
+import android.graphics.Color;
+import android.content.Intent;
 import android.view.View;
+import android.webkit.JavascriptInterface;
 import android.webkit.WebResourceRequest;
+import android.webkit.WebResourceResponse;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
-import android.widget.LinearLayout;
-import android.widget.TextView;
-import android.widget.Toast;
-import java.io.ByteArrayOutputStream;
-import java.io.IOException;
 import java.io.InputStream;
-import java.nio.charset.StandardCharsets;
 
-/**
- * Offline-first Android application for expense tracking and shopping.
- *
- * An embedded, standalone UI works without Google login; local data stays in the
- * app's protected WebView DOM storage. The separate Cloud button uses Chrome
- * for the Google account chooser and private Apps Script spreadsheet. Do NOT
- * run Google authorization inside WebView or copy browser cookies into the app.
- *
- * WARNING: local-only entries and Google Sheets transactions are deliberately
- * distinct until an authenticated sync mechanism is implemented.
+/** One-screen, private offline-first finance app with encrypted feed sync.
+ * Google credentials are never requested or stored by this application.
+ * Only local APK assets are privileged. The remote snapshot is encrypted to a
+ * nonextractable P-256 ECDH device private key held in IndexedDB.
  */
 public final class MainActivity extends Activity {
-    private static final String CLOUD_WEB_APP =
-        "https://script.google.com/macros/s/"
-        + "AKfycbxldHZKNbo0Wwoq8MJwzKUTHPEB86bniLdO4GAeSojWz9fmeMm7TIRA4glbTdUNz75NYA"
-        + "/exec";
-    private static final String APP_ORIGIN = "https://appassets.androidplatform.net/";
-    private static final int DARK = Color.rgb(19, 43, 36);
-    private static final int LIME = Color.rgb(219, 255, 145);
-    private static final int WHITE = Color.rgb(255, 255, 255);
-    private static final int MUTED = Color.rgb(95, 116, 104);
-    private WebView webView;
+    private static final String ORIGIN = "https://appassets.androidplatform.net";
+    private static final String HOME = ORIGIN + "/assets/index.html";
+    private WebView browser;
+
+    public final class ShareBridge {
+        @JavascriptInterface
+        public void sharePublicKey(final String message) {
+            if (message == null || message.length() > 1600 ||
+                    !message.startsWith("Подключи Мои деньги к нашему чату. Публичный ключ P-256: ")) return;
+            runOnUiThread(() -> {
+                Intent send = new Intent(Intent.ACTION_SEND);
+                send.setType("text/plain");
+                send.putExtra(Intent.EXTRA_TEXT, message);
+                startActivity(Intent.createChooser(send, "Отправить публичный ключ"));
+            });
+        }
+    }
 
     @Override
-    protected void onCreate(Bundle savedState) {
-        super.onCreate(savedState);
-        getWindow().setStatusBarColor(DARK);
-        getWindow().setNavigationBarColor(DARK);
+    protected void onCreate(Bundle state) {
+        super.onCreate(state);
+        getWindow().setStatusBarColor(Color.rgb(244,245,242));
+        getWindow().setNavigationBarColor(Color.rgb(23,39,32));
+        getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR);
 
-        LinearLayout root = new LinearLayout(this);
-        root.setOrientation(LinearLayout.VERTICAL);
-        root.setBackgroundColor(Color.rgb(246, 247, 242));
+        browser = new WebView(this);
+        browser.setBackgroundColor(Color.rgb(244,245,242));
+        WebSettings s = browser.getSettings();
+        s.setJavaScriptEnabled(true);
+        s.setDomStorageEnabled(true);
+        s.setDatabaseEnabled(true);
+        s.setAllowFileAccess(false);
+        s.setAllowContentAccess(false);
+        s.setAllowFileAccessFromFileURLs(false);
+        s.setAllowUniversalAccessFromFileURLs(false);
+        s.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);
+        s.setJavaScriptCanOpenWindowsAutomatically(false);
+        s.setSupportMultipleWindows(false);
+        s.setMediaPlaybackRequiresUserGesture(true);
+        s.setSafeBrowsingEnabled(true);
 
-        LinearLayout toolbar = new LinearLayout(this);
-        toolbar.setOrientation(LinearLayout.HORIZONTAL);
-        toolbar.setGravity(Gravity.CENTER_VERTICAL);
-        toolbar.setPadding(dp(15), dp(8), dp(15), dp(8));
-        toolbar.setBackgroundColor(DARK);
-
-        TextView name = new TextView(this);
-        name.setText("М.  Мои деньги");
-        name.setTextSize(19);
-        name.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
-        name.setTextColor(LIME);
-        toolbar.addView(name, new LinearLayout.LayoutParams(0, dp(43), 1));
-
-        TextView cloud = new TextView(this);
-        cloud.setText("Облачные расходы");
-        cloud.setGravity(Gravity.CENTER);
-        cloud.setTextColor(DARK);
-        cloud.setTextSize(13);
-        cloud.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
-        cloud.setPadding(dp(12), 0, dp(12), 0);
-        cloud.setBackground(rounded(LIME, 12));
-        toolbar.addView(cloud, new LinearLayout.LayoutParams(-2, dp(42)));
-        cloud.setOnClickListener(v -> openCloudWithAccountChooser());
-        root.addView(toolbar, new LinearLayout.LayoutParams(-1, dp(60)));
-
-        TextView mode = new TextView(this);
-        mode.setText("Локальный учёт • записи только на этом телефоне");
-        mode.setTextSize(11);
-        mode.setTextColor(MUTED);
-        mode.setGravity(Gravity.CENTER);
-        mode.setPadding(dp(6), dp(6), dp(6), dp(6));
-        root.addView(mode, new LinearLayout.LayoutParams(-1, dp(29)));
-
-        webView = new WebView(this);
-        WebSettings settings = webView.getSettings();
-        settings.setJavaScriptEnabled(true);
-        settings.setDomStorageEnabled(true);
-        settings.setAllowFileAccess(false);
-        settings.setAllowContentAccess(false);
-        settings.setJavaScriptCanOpenWindowsAutomatically(false);
-        settings.setSupportMultipleWindows(false);
-        settings.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);
-        settings.setMediaPlaybackRequiresUserGesture(true);
-        webView.setWebViewClient(new WebViewClient() {
+        browser.addJavascriptInterface(new ShareBridge(), "AndroidBridge");
+        browser.setWebViewClient(new WebViewClient() {
             @Override
-            public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
-                Uri uri = request.getUrl();
-                if ("appassets.androidplatform.net".equals(uri.getHost())) return false;
-                if ("https".equals(uri.getScheme())) openExternal(uri);
+            public WebResourceResponse shouldInterceptRequest(WebView view, WebResourceRequest req) {
+                android.net.Uri uri = req.getUrl();
+                if ("https".equals(uri.getScheme()) &&
+                    "appassets.androidplatform.net".equals(uri.getHost()) &&
+                    "/assets/index.html".equals(uri.getPath())) {
+                    try {
+                        InputStream data = getAssets().open("index.html");
+                        WebResourceResponse response = new WebResourceResponse("text/html","UTF-8",data);
+                        response.setStatusCodeAndReasonPhrase(200,"OK");
+                        response.getResponseHeaders().put("Cache-Control","no-store");
+                        return response;
+                    } catch (Exception ignored) {
+                        return new WebResourceResponse("text/plain","UTF-8",
+                            new java.io.ByteArrayInputStream("Ошибка загрузки приложения".getBytes()));
+                    }
+                }
+                return null;
+            }
+
+            @Override
+            public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest req) {
+                android.net.Uri uri = req.getUrl();
+                if (!req.isForMainFrame()) return false;
+                if ("appassets.androidplatform.net".equals(uri.getHost()) &&
+                    "https".equals(uri.getScheme())) return false;
+                if ("https".equals(uri.getScheme())) {
+                    try {
+                        startActivity(new Intent(Intent.ACTION_VIEW,uri));
+                    } catch (Exception ignored) {}
+                }
                 return true;
             }
         });
-        root.addView(webView, new LinearLayout.LayoutParams(-1, 0, 1));
-        setContentView(root);
-
-        try {
-            String html = readAsset("index.html");
-            // HTML is bundled within the APK, and has a stable secure origin for
-            // private localStorage. No Google sign-in is attempted in this WebView.
-            webView.loadDataWithBaseURL(APP_ORIGIN, html, "text/html", "UTF-8", APP_ORIGIN);
-        } catch (IOException ex) {
-            TextView fallback = new TextView(this);
-            fallback.setText("Не удалось загрузить интерфейс. Переустанови приложение.");
-            fallback.setTextColor(DARK);
-            fallback.setTextSize(18);
-            fallback.setGravity(Gravity.CENTER);
-            root.removeView(webView);
-            root.addView(fallback, new LinearLayout.LayoutParams(-1, 0, 1));
-        }
+        setContentView(browser);
+        if (state != null) browser.restoreState(state);
+        else browser.loadUrl(HOME);
     }
 
-    private String readAsset(String filename) throws IOException {
-        try (InputStream in = getAssets().open(filename);
-             ByteArrayOutputStream buf = new ByteArrayOutputStream()) {
-            byte[] bytes = new byte[8192];
-            int n;
-            while ((n = in.read(bytes)) != -1) buf.write(bytes, 0, n);
-            return buf.toString("UTF-8");
-        }
-    }
-
-    private void openCloudWithAccountChooser() {
-        // The server is deliberately restricted to its owner. Let Google ask
-        // the user to select the account owning the spreadsheet, instead of
-        // opening /exec with the wrong Chrome account and showing a Drive 404.
-        String chooser = "https://accounts.google.com/AccountChooser?continue="
-            + Uri.encode(CLOUD_WEB_APP);
-        openExternal(Uri.parse(chooser));
-    }
-
-    private void openExternal(Uri uri) {
-        Intent i = new Intent(Intent.ACTION_VIEW, uri);
-        i.addCategory(Intent.CATEGORY_BROWSABLE);
-        i.setPackage("com.android.chrome");
-        try {
-            startActivity(i);
-        } catch (ActivityNotFoundException ex) {
-            i.setPackage(null);
-            try {
-                startActivity(i);
-            } catch (ActivityNotFoundException noBrowser) {
-                Toast.makeText(this, "Для доступа к Google нужна установка Chrome", Toast.LENGTH_LONG).show();
-            }
-        }
-    }
-
-    private GradientDrawable rounded(int bg, float radiusDp) {
-        GradientDrawable draw = new GradientDrawable();
-        draw.setColor(bg);
-        draw.setCornerRadius(dp(radiusDp));
-        return draw;
-    }
-
-    private int dp(float value) {
-        return Math.round(value * getResources().getDisplayMetrics().density);
+    @Override
+    protected void onSaveInstanceState(Bundle outState) {
+        if (browser != null) browser.saveState(outState);
+        super.onSaveInstanceState(outState);
     }
 
     @Override
     public void onBackPressed() {
-        if (webView != null && webView.canGoBack()) {
-            webView.goBack();
-        } else {
-            super.onBackPressed();
-        }
+        if (browser != null && browser.canGoBack()) browser.goBack();
+        else super.onBackPressed();
     }
 
     @Override
     protected void onDestroy() {
-        if (webView != null) {
-            webView.destroy();
-            webView = null;
+        if (browser != null) {
+            browser.removeJavascriptInterface("AndroidBridge");
+            browser.destroy();
+            browser = null;
         }
         super.onDestroy();
     }
