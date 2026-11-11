@@ -1,0 +1,57 @@
+name: Publish verified Moi Dengi 2.2 APK for direct Android download
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/publish-moi-dengi-2-2.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Download already successful Android 2.2 artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/moi-dengi-verified
+          gh run download 43022720815 --name MoiDengi-Android-APK --dir /tmp/moi-dengi-verified
+          test -s /tmp/moi-dengi-verified/app-debug.apk
+          unzip -t /tmp/moi-dengi-verified/app-debug.apk | tail -1
+          unzip -p /tmp/moi-dengi-verified/app-debug.apk assets/index.html | grep -q 'nativeSheets'
+          echo "Verified APK size: $(wc -c < /tmp/moi-dengi-verified/app-debug.apk)"
+          sha256sum /tmp/moi-dengi-verified/app-debug.apk
+
+      - name: Publish direct download in repository
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          for attempt in 1 2 3; do
+            git fetch origin main
+            git reset --hard origin/main
+            mkdir -p rashody-android/downloads
+            cp /tmp/moi-dengi-verified/app-debug.apk rashody-android/downloads/MoiDengi-2.2.apk
+            git add -f rashody-android/downloads/MoiDengi-2.2.apk
+            if git diff --cached --quiet; then
+              echo "APK already published"
+              exit 0
+            fi
+            git commit -m "release: verified direct Android 2.2 APK [skip ci]"
+            if git push origin HEAD:main; then
+              echo "PUBLISHED: rashody-android/downloads/MoiDengi-2.2.apk"
+              exit 0
+            fi
+          done
+          exit 1
