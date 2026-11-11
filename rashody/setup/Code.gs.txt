@@ -1,0 +1,71 @@
+/**
+ * Мои деньги. Код для привязанного Google Apps Script.
+ * Таблица → Расширения → Apps Script.
+ * Веб-приложение: выполнять от моего имени, доступ только мне.
+ */
+const SHEET_NAME = 'Расходы';
+function doGet() {
+  return HtmlService.createHtmlOutputFromFile('Index').setTitle('Мои деньги • Расходы')
+    .addMetaTag('viewport','width=device-width, initial-scale=1, viewport-fit=cover');
+}
+function sheet_() {
+  const book=SpreadsheetApp.getActiveSpreadsheet();
+  if(!book)throw new Error('Создайте скрипт из Google Таблицы');
+  const s=book.getSheetByName(SHEET_NAME);
+  if(!s)throw new Error('Нет листа «Расходы»');
+  return s;
+}
+function date_(v){
+  return v instanceof Date
+    ? Utilities.formatDate(v,Session.getScriptTimeZone(),'yyyy-MM-dd')
+    : String(v==null?'':v).slice(0,10);
+}
+function readAll(){
+  const s=sheet_(),end=s.getLastRow();if(end<2)return [];
+  return s.getRange(2,1,end-1,10).getValues().filter(r=>r[0]).map(r=>({
+    id:String(r[0]),date:date_(r[1]),description:String(r[2]||''),
+    category:String(r[3]||'Другое'),project:String(r[4]||'Семья'),
+    kgs:Number(r[5])||0,amount:Number(r[6])||0,currency:String(r[7]||'KGS'),
+    type:String(r[8]||'Расход'),note:String(r[9]||'')
+  }));
+}
+function clean_(x){
+  if(!x||typeof x!=='object')throw new Error('Нет операции');
+  const date=String(x.date||'').slice(0,10);
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(date)||isNaN(Date.parse(date+'T00:00:00Z')))throw new Error('Неверная дата');
+  const description=String(x.description||'').trim().slice(0,150);
+  if(!description)throw new Error('Укажите название');
+  const amount=Number(x.amount),kgs=Number(x.kgs);
+  if(!Number.isFinite(amount)||!Number.isFinite(kgs)||amount<=0||kgs<=0||amount>1e12||kgs>1e12)throw new Error('Неверная сумма');
+  const currency=String(x.currency||'KGS').toUpperCase();
+  if(!['KGS','USD','VND'].includes(currency))throw new Error('Неверная валюта');
+  return {date,description,category:String(x.category||'Другое').slice(0,50),project:String(x.project||'Семья').slice(0,80),
+    amount,kgs:Math.round(kgs*100)/100,currency,type:x.type==='Доход'?'Доход':'Расход',note:String(x.note||'').slice(0,500)};
+}
+function values_(id,x){return [id,x.date,x.description,x.category,x.project,x.kgs,x.amount,x.currency,x.type,x.note]}
+function addExpense(item){
+  const x=clean_(item),lock=LockService.getDocumentLock();lock.waitLock(15000);
+  try{
+    const id='exp-'+Utilities.getUuid();
+    sheet_().appendRow(values_(id,x));return {ok:true,id};
+  }finally{lock.releaseLock()}
+}
+function findRow_(s,id){
+  const n=s.getLastRow();if(n<2)throw new Error('Операций пока нет');
+  const all=s.getRange(2,1,n-1,1).getValues();const ix=all.findIndex(r=>String(r[0])===id);
+  if(ix<0)throw new Error('Операция не найдена');return ix+2;
+}
+function replaceExpense(item){
+  const id=String(item&&item.id||'');if(!id)throw new Error('Нет ID');
+  const x=clean_(item),lock=LockService.getDocumentLock();lock.waitLock(15000);
+  try{
+    const s=sheet_();s.getRange(findRow_(s,id),1,1,10).setValues([values_(id,x)]);return {ok:true,id};
+  }finally{lock.releaseLock()}
+}
+function removeExpense(id){
+  id=String(id||'');if(!id)throw new Error('Нет ID');
+  const lock=LockService.getDocumentLock();lock.waitLock(15000);
+  try{
+    const s=sheet_();s.deleteRow(findRow_(s,id));return {ok:true};
+  }finally{lock.releaseLock()}
+}
