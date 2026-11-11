@@ -7,6 +7,10 @@ APK="rashody-android/app/build/outputs/apk/debug/app-debug.apk"
 PKG="kg.evgeny.moidengi.sheets"
 test -s "$APK"
 adb install -r "$APK"
+# This emulator has no signed-in Google account; the system OAuth
+# "Checking info..." activity would otherwise cover the entire UI.
+# Disable Play Services ONLY in the disposable emulator for UI testing.
+adb shell pm disable-user --user 0 com.google.android.gms || true
 adb shell settings put system accelerometer_rotation 0
 adb shell cmd window user-rotation lock 0
 adb shell am start -W -n "$PKG/kg.evgeny.moidengi.MainActivity"
@@ -48,10 +52,10 @@ for name in names:
     for y in range(0,height,8):
         for x in range(0,width,8):
             r,g,b=pixels[x,y]; total+=1
-            if r<95 and g<140 and b<110: dark+=1
+            if r<100 and g<145 and b<110 and g>=r+8 and g>=b+5: dark+=1
     ratio=dark/total
     print(name,(width,height),"visible-dark-content:",round(ratio,4),flush=True)
-    assert ratio>=0.035,name+" screenshot is blank or does not contain the finance UI"
+    assert ratio>=0.045,name+" screenshot lacks the dark-green finance UI"
     dims.append((width,height))
 assert dims[0][1]>dims[0][0],"Startup was not portrait"
 assert dims[1][0]>dims[1][1],"Android did not rotate to landscape"
