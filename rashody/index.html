@@ -259,7 +259,10 @@ async function loadRates(force=false){
   const data=await response.json();if(data.result!=='success'||!['KGS','USD','VND','KZT'].every(c=>data.rates?.[c]>0))throw Error('Нет полных курсов');
   fx={rates:{KGS:data.rates.KGS,USD:1,VND:data.rates.VND,KZT:data.rates.KZT},date:data.time_last_update_utc,fetched:Date.now()};
   localStorage.setItem('last-fx-v1',JSON.stringify(fx));
- }catch(e){if(force)ping('Нет свежих курсов; проверь подключение')}finally{clearTimeout(timer);showFx();if($('overlay').classList.contains('show')&&$('currency').value!=='KGS'&&!$('kgs').value)updateKgsField()}
+ }catch(e){
+  if(remote&&connected){try{const data=await call('getFxRates');if(!['KGS','VND','KZT'].every(c=>data.rates?.[c]>0))throw Error('Некорректный курс');fx={rates:data.rates,date:data.date,fetched:Date.now()};localStorage.setItem('last-fx-v1',JSON.stringify(fx));}catch(err){if(force)ping('Курсы недоступны даже через Google')}}
+  else if(force)ping('Нет свежих курсов; проверь подключение');
+ }finally{clearTimeout(timer);showFx();if($('overlay').classList.contains('show')&&$('currency').value!=='KGS'&&!$('kgs').value)updateKgsField()}
 }
 
 function showFx(){let from=$('fxFrom').value,to=$('fxTo').value,amount=+$('fxAmount').value||0,value=convert(amount,from,to);$('fxResult').textContent=value==null?'—':fmt(value,to==='VND'?0:2)+' '+to;$('fxRate').textContent=fx?`1 ${from} ≈ ${fmt(convert(1,from,to),to==='VND'?1:4)} ${to} · ${String(fx.date||'')} · справочный курс${Date.now()-fx.fetched>48*3600e3?' (данные давно не обновлялись)':''}`:'Нет курсов. Загрузите курс или укажите сумму списания в сомах';}
