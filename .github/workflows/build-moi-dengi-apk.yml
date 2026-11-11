@@ -39,7 +39,7 @@ jobs:
           echo "ANDROID_HOME=$ANDROID_HOME"
 
       - name: Install Android platform and build tools
-        run: sdkmanager --install "platforms;android-35" "build-tools;35.0.0"
+        run: "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install "platforms;android-35" "build-tools;35.0.0"
 
       - name: Configure Gradle
         uses: gradle/actions/setup-gradle@v4
