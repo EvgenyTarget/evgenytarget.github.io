@@ -100,7 +100,7 @@ jobs:
       - name: Android device smoke test
         uses: reactivecircus/android-emulator-runner@v2
         with:
-          api-level: 34
+          api-level: 35
           target: google_apis
           arch: x86_64
           profile: pixel_4
