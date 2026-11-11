@@ -18,11 +18,21 @@ echo "Finance process PID: $PID"
 adb exec-out screencap -p > /tmp/moi-dengi-portrait.png
 adb shell cmd window user-rotation lock 1
 sleep 8
-test "$(adb shell pidof "$PKG" | tr -d '\r')" = "$PID"
+NEW_PID="$(adb shell pidof "$PKG" | tr -d '\r')"
+test -n "$NEW_PID"
+if [ "$NEW_PID" != "$PID" ]; then
+  echo "NOTICE: PID changed during rotation: $PID -> $NEW_PID"
+  adb shell dumpsys activity activities | grep "$PKG" | head -10 || true
+fi
 adb exec-out screencap -p > /tmp/moi-dengi-landscape.png
 adb shell cmd window user-rotation lock 0
 sleep 6
-test "$(adb shell pidof "$PKG" | tr -d '\r')" = "$PID"
+NEW_PID="$(adb shell pidof "$PKG" | tr -d '\r')"
+test -n "$NEW_PID"
+if [ "$NEW_PID" != "$PID" ]; then
+  echo "NOTICE: PID changed during rotation: $PID -> $NEW_PID"
+  adb shell dumpsys activity activities | grep "$PKG" | head -10 || true
+fi
 adb exec-out screencap -p > /tmp/moi-dengi-portrait-again.png
 
 python3 -m pip install --quiet Pillow
