@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - 'rashody-android/app/**'
+      - 'rashody-android/tools/**'
       - 'rashody-android/settings.gradle'
       - 'rashody-android/build.gradle'
       - 'rashody-android/gradle.properties'
@@ -104,59 +105,16 @@ jobs:
           arch: x86_64
           profile: pixel_4
           emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -camera-back none
-          script: |
-            set -euo pipefail
-            APK=rashody-android/app/build/outputs/apk/debug/app-debug.apk
-            PKG=kg.evgeny.moidengi.sheets
-            adb install -r "$APK"
-            adb shell settings put system accelerometer_rotation 0
-            adb shell cmd window user-rotation lock 0
-            adb shell am start -W -n "$PKG/kg.evgeny.moidengi.MainActivity"
-            sleep 12
-            PID="$(adb shell pidof "$PKG" | tr -d '\r')"
-            test -n "$PID"
-            adb exec-out screencap -p > /tmp/moi-dengi-portrait.png
-            adb shell cmd window user-rotation lock 1
-            sleep 8
-            test "$(adb shell pidof "$PKG" | tr -d '\r')" = "$PID"
-            adb exec-out screencap -p > /tmp/moi-dengi-landscape.png
-            adb shell cmd window user-rotation lock 0
-            sleep 6
-            test "$(adb shell pidof "$PKG" | tr -d '\r')" = "$PID"
-            adb exec-out screencap -p > /tmp/moi-dengi-portrait-again.png
-            python3 -m pip install --quiet Pillow
-            python3 - <<'PY'
-            from PIL import Image
-            names=['portrait','landscape','portrait-again']
-            shapes=[]
-            for name in names:
-              im=Image.open('/tmp/moi-dengi-'+name+'.png').convert('RGB')
-              w,h=im.size
-              pix=im.load()
-              # A genuine finance home screen contains the dark green hero card.
-              # A fully blank WebView, or a white Google error, fails this test.
-              sampled=0
-              dark=0
-              for y in range(0,h,8):
-                for x in range(0,w,8):
-                  r,g,b=pix[x,y]
-                  sampled+=1
-                  if r<95 and g<140 and b<110:dark+=1
-              ratio=dark/sampled
-              print(name,(w,h),'dark-ratio=',round(ratio,4),flush=True)
-              if ratio<0.035:
-                raise AssertionError(name+' screenshot is blank or missing finance UI')
-              shapes.append((w,h))
-            assert shapes[0][1]>shapes[0][0], 'Expected portrait startup'
-            assert shapes[1][0]>shapes[1][1], 'Android did not rotate to landscape'
-            assert shapes[2][1]>shapes[2][0], 'Android did not return to portrait'
-            print('Rotation, layout and renderer process smoke tests passed')
-            PY
-            adb shell dumpsys meminfo "$PKG" | head -55
-            if adb logcat -d -v brief | grep -E 'FATAL EXCEPTION.*kg.evgeny.moidengi|crash.*kg.evgeny.moidengi'; then
-              echo 'Finance app crash detected'
-              exit 1
-            fi
+          script: bash rashody-android/tools/smoke_test_android.sh
+
+      - name: Save emulator screenshots for inspection
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: MoiDengi-Android-Smoke-Screenshots
+          path: /tmp/moi-dengi-*.png
+          retention-days: 7
+          if-no-files-found: ignore
 
       - name: Keep a downloadable build artifact
         uses: actions/upload-artifact@v4
