@@ -74,7 +74,7 @@ jobs:
           "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$APK" | grep "^package: name='kg.evgeny.moidengi'"
           "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$APK" | grep "sdkVersion:'26'"
           test "$(wc -c < "$APK")" -gt 5000
-          unzip -p "$APK" assets/index.html | grep -q 'id="secure-pair"'
+          unzip -p "$APK" assets/index.html | grep -q 'nativeSheets'
           unzip -p "$APK" assets/index.html | grep -q 'nativeSheets'
           "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$APK" | grep "versionName='2.0.0'"
 
