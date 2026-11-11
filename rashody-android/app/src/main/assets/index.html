@@ -137,13 +137,7 @@ button:active{transform:scale(.965)}
 <div id="app">
   <header class="top"><div class="top-start"><div class="brand-symbol">м.</div><div><div class="eyebrow">ЛИЧНЫЕ ФИНАНСЫ</div><div class="brand">Мои деньги<span style="color:#72a55f">.</span></div></div></div><div class="right"><button class="iconbtn" id="sync" title="Обновить данные" aria-label="Обновить"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M20 11a8 8 0 0 0-13.7-5.7L4 8"/><path d="M4 4v4h4"/><path d="M4 13a8 8 0 0 0 13.7 5.7L20 16"/><path d="M16 16h4v4"/></svg></button><div class="logo">М</div></div></header>
   <div id="status" class="status">Подключение…</div>
-  <section id="secure-pair" aria-live="polite">
-    <h3>Синхронизация с нашим чатом</h3>
-    <p id="secureMessage">Здесь будут расходы и покупки, которые ты отправляешь мне в ChatGPT. Содержимое передаётся в зашифрованном виде.</p>
-    <div class="secure-buttons"><button type="button" id="secureConnect">Подключить один раз</button><button type="button" class="secondary" id="secureRefresh">Обновить записи</button></div>
-    <code id="publicKey" hidden></code>
-    <p class="tiny" id="secureHelp">Ключ остаётся на телефоне. Для подключения отправь мне только публичный код.</p>
-  </section>
+  
 
   <main id="tab-overview" class="panel active">
     <div class="month-nav"><button id="prevMonth" aria-label="Предыдущий месяц">‹</button><b id="monthLabel"></b><button id="nextMonth" aria-label="Следующий месяц">›</button></div>
@@ -368,73 +362,10 @@ function bindings(){
  };
 }
 
-// A device-specific P-256 ECDH private key is stored nonextractably in IndexedDB.
-// ChatGPT receives ONLY its public key and publishes a snapshot encrypted to it.
-// No Google account, API token or spreadsheet is made publicly accessible.
-const FEED_URL='https://raw.githubusercontent.com/EvgenyTarget/evgenytarget.github.io/main/rashody/data.enc.json';
-const utf8=s=>new TextEncoder().encode(s);
-function b64u(buf){let a=new Uint8Array(buf),s='';for(let i=0;i<a.length;i++)s+=String.fromCharCode(a[i]);return btoa(s).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'')}
-function unb64u(s){s=String(s).replace(/-/g,'+').replace(/_/g,'/');let bin=atob(s.padEnd(Math.ceil(s.length/4)*4,'=')),u=new Uint8Array(bin.length);for(let i=0;i<u.length;i++)u[i]=bin.charCodeAt(i);return u}
-function dbPromise(){return new Promise((resolve,reject)=>{const r=indexedDB.open('my-dengi-private-keys',1);r.onupgradeneeded=()=>r.result.createObjectStore('keys');r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error)})}
-async function keyGet(){const db=await dbPromise();return new Promise((resolve,reject)=>{const tx=db.transaction('keys','readonly'),q=tx.objectStore('keys').get('device');q.onsuccess=()=>{resolve(q.result||null);db.close()};q.onerror=()=>{reject(q.error);db.close()}})}
-async function keyPut(v){const db=await dbPromise();return new Promise((resolve,reject)=>{const tx=db.transaction('keys','readwrite');tx.objectStore('keys').put(v,'device');tx.oncomplete=()=>{db.close();resolve()};tx.onerror=()=>{db.close();reject(tx.error)}})}
-async function makeDeviceKey(){const old=await keyGet();if(old?.privateKey&&old?.publicSpki)return old;
-const raw=await crypto.subtle.generateKey({name:'ECDH',namedCurve:'P-256'},true,['deriveBits']);
-const privateJwk=await crypto.subtle.exportKey('jwk',raw.privateKey);
-const privateKey=await crypto.subtle.importKey('jwk',privateJwk,{name:'ECDH',namedCurve:'P-256'},false,['deriveBits']);
-const publicSpki=b64u(await crypto.subtle.exportKey('spki',raw.publicKey));
-const data={privateKey,publicSpki};await keyPut(data);return data}
-function applyCloudCache(){if(remote)return;let c;try{c=JSON.parse(localStorage.getItem('secure-cloud-cache-v1')||'null')}catch(e){c=null}
- if(!c||!Array.isArray(c.entries)||!Array.isArray(c.shopping))return;
- secureCloudIds=new Set(c.entries.map(x=>String(x.id)));secureShoppingIds=new Set(c.shopping.map(x=>String(x.id)));
- let overrides={};try{overrides=JSON.parse(localStorage.getItem('my-shopping-overrides-v1')||'{}')}catch(e){}
- const localRows=localJson('my-expenses-v1',[]).filter(x=>!secureCloudIds.has(x.id));
- const localBuy=localJson('my-shopping-v1',[]).filter(x=>!secureShoppingIds.has(x.id));
- rows=[...c.entries,...localRows];shopping=[...c.shopping.map(x=>({...x,done:Object.hasOwn(overrides,x.id)?!!overrides[x.id]:!!x.done})),...localBuy];secureCloudReady=true;
-}
-async function secureSync(force){if(remote||secureSyncing)return;secureSyncing=true;
-try{const key=await keyGet();if(!key){$('secureMessage').textContent='Подключи один раз, чтобы получать расходы из чата.';return}
- const ctrl=new AbortController(),timer=setTimeout(()=>ctrl.abort(),12000);let response;
- try{response=await fetch(FEED_URL+'?t='+Date.now(),{cache:'no-store',signal:ctrl.signal})}finally{clearTimeout(timer)}
- if(response.status===404){$('secureMessage').textContent='Ключ создан. Отправь публичный код в наш чат, чтобы я подключил расходы.';return}
- if(!response.ok)throw Error('Источник данных временно недоступен ('+response.status+')');
- if(Number(response.headers.get('content-length')||0)>4000000)throw Error('Слишком большой ответ');
- const payload=await response.text();if(payload.length>4000000)throw Error('Слишком большой ответ');
- const packet=JSON.parse(payload);if(packet.version!==1||packet.alg!=='P256-HKDF-SHA256-AES256GCM')throw Error('Неподдерживаемый формат');
- if(!packet.ephemeral||!packet.iv||!packet.salt||!packet.ciphertext)throw Error('Неполный пакет');
- const peer=await crypto.subtle.importKey('spki',unb64u(packet.ephemeral),{name:'ECDH',namedCurve:'P-256'},false,[]);
- const secret=await crypto.subtle.deriveBits({name:'ECDH',public:peer},key.privateKey,256);
- const material=await crypto.subtle.importKey('raw',secret,'HKDF',false,['deriveKey']);
- const aes=await crypto.subtle.deriveKey({name:'HKDF',hash:'SHA-256',salt:unb64u(packet.salt),info:utf8('moi-dengi-feed-v1')},material,{name:'AES-GCM',length:256},false,['decrypt']);
- const clear=await crypto.subtle.decrypt({name:'AES-GCM',iv:unb64u(packet.iv),additionalData:utf8('moi-dengi-v1'),tagLength:128},aes,unb64u(packet.ciphertext));
- const data=JSON.parse(new TextDecoder().decode(clear));
- if(data.format!=='moi-dengi-v1'||!Array.isArray(data.entries)||!Array.isArray(data.shopping)||data.entries.length>10000||data.shopping.length>10000)throw Error('Повреждены данные');
- for(const e of data.entries){if(typeof e.id!=='string'||!validDate(e.date)||!Number.isFinite(Number(e.kgs))||Number(e.kgs)<0)throw Error('Некорректная операция')}
- for(const x of data.shopping){if(typeof x.id!=='string'||!x.name)throw Error('Некорректная покупка')}
- localStorage.setItem('secure-cloud-cache-v1',JSON.stringify(data));applyCloudCache();connected=true;
- const n=data.entries.length;$('secureMessage').textContent='Обновлено: '+n+' операций из нашего чата. Отметки покупок сохраняются на телефоне.';
- $('secureHelp').textContent='Передача зашифрована. Последнее обновление: '+new Date().toLocaleString('ru-RU');
- $('status').classList.remove('offline');$('status').textContent='Данные из чата · защищённая синхронизация';
- lastSync=new Date().toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'});render();renderShopping();
- }catch(e){$('secureMessage').textContent=secureCloudReady?'Нет связи — последние записи сохранены на телефоне. '+e.message:'Данные ещё не загружены: '+e.message;if(force)ping('Синхронизация: '+e.message)}finally{secureSyncing=false}
-}
-async function secureStart(){if(remote){$('secure-pair').hidden=true;return}
- try{if(!crypto.subtle||!indexedDB)throw Error('Нужна современная версия Android System WebView');
- const key=await keyGet();if(key){$('secureConnect').textContent='Отправить ключ повторно';$('publicKey').textContent=key.publicSpki;$('publicKey').hidden=false;await secureSync()}
- }catch(e){$('secureMessage').textContent='Не удалось создать безопасное соединение: '+e.message}
- $('secureConnect').onclick=async()=>{try{const key=await makeDeviceKey();$('publicKey').textContent=key.publicSpki;$('publicKey').hidden=false;
- $('secureMessage').textContent='Публичный ключ готов. Отправь его в наш чат один раз — я подключу твои записи.';
- $('secureConnect').textContent='Отправить ключ повторно';
- const msg='Подключи Мои деньги к нашему чату. Публичный ключ P-256: '+key.publicSpki;
- if(window.AndroidBridge?.sharePublicKey){window.AndroidBridge.sharePublicKey(msg)}
- else if(navigator.share){await navigator.share({text:msg})}
- else if(navigator.clipboard?.writeText){await navigator.clipboard.writeText(msg);ping('Ключ скопирован, отправь в наш чат')}
- else{const tmp=document.createElement('textarea');tmp.value=msg;document.body.appendChild(tmp);tmp.select();document.execCommand('copy');tmp.remove();ping('Ключ скопирован')}
- }catch(e){ping('Не удалось создать ключ: '+e.message)}};
- $('secureRefresh').onclick=()=>secureSync(true);
- document.addEventListener('visibilitychange',()=>{if(!document.hidden)secureSync()});
- setInterval(()=>{if(!document.hidden)secureSync()},600000)
-}
+// Direct Google Sheets API is the only remote finance backend in the APK.
+function applyCloudCache(){}
+async function secureSync(){}
+async function secureStart(){const section=$('secure-pair');if(section)section.hidden=true}
 
 function boot(){categories.forEach(c=>{for(const id of ['category','filterCat']){const op=document.createElement('option');op.value=c;op.textContent=c;$(id).appendChild(op)}});month=new Date(new Date().getFullYear(),new Date().getMonth(),1);bindings();loadRates();reload().then(()=>secureStart())}
 boot();
