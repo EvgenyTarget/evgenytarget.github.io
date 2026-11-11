@@ -10,166 +10,183 @@ import android.net.Uri;
 import android.os.Bundle;
 import android.view.Gravity;
 import android.view.View;
-import android.widget.Button;
+import android.webkit.WebResourceRequest;
+import android.webkit.WebSettings;
+import android.webkit.WebView;
+import android.webkit.WebViewClient;
 import android.widget.LinearLayout;
-import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 
 /**
- * Thin Android shell for a personal, Google-authenticated Apps Script web app.
- * Uses Chrome Custom Tabs instead of WebView, which Google sign-in does not support.
- * The native app cannot read Google cookies or personal transaction data.
+ * Offline-first Android application for expense tracking and shopping.
+ *
+ * An embedded, standalone UI works without Google login; local data stays in the
+ * app's protected WebView DOM storage. The separate Cloud button uses Chrome
+ * for the Google account chooser and private Apps Script spreadsheet. Do NOT
+ * run Google authorization inside WebView or copy browser cookies into the app.
+ *
+ * WARNING: local-only entries and Google Sheets transactions are deliberately
+ * distinct until an authenticated sync mechanism is implemented.
  */
 public final class MainActivity extends Activity {
-    private static final String APP_URL =
+    private static final String CLOUD_WEB_APP =
         "https://script.google.com/macros/s/"
         + "AKfycbxldHZKNbo0Wwoq8MJwzKUTHPEB86bniLdO4GAeSojWz9fmeMm7TIRA4glbTdUNz75NYA"
         + "/exec";
+    private static final String APP_ORIGIN = "https://appassets.androidplatform.net/";
     private static final int DARK = Color.rgb(19, 43, 36);
-    private static final int LIME = Color.rgb(217, 255, 146);
-    private static final int MUTED = Color.rgb(102, 120, 108);
-    private boolean launched = false;
+    private static final int LIME = Color.rgb(219, 255, 145);
+    private static final int WHITE = Color.rgb(255, 255, 255);
+    private static final int MUTED = Color.rgb(95, 116, 104);
+    private WebView webView;
 
     @Override
     protected void onCreate(Bundle savedState) {
         super.onCreate(savedState);
         getWindow().setStatusBarColor(DARK);
-        getWindow().setNavigationBarColor(Color.rgb(245, 246, 239));
+        getWindow().setNavigationBarColor(DARK);
 
-        ScrollView scroll = new ScrollView(this);
-        scroll.setFillViewport(true);
-        scroll.setBackgroundColor(Color.rgb(245, 246, 239));
+        LinearLayout root = new LinearLayout(this);
+        root.setOrientation(LinearLayout.VERTICAL);
+        root.setBackgroundColor(Color.rgb(246, 247, 242));
 
-        LinearLayout body = new LinearLayout(this);
-        body.setOrientation(LinearLayout.VERTICAL);
-        body.setPadding(dp(24), dp(55), dp(24), dp(32));
-        body.setGravity(Gravity.CENTER_HORIZONTAL);
-        scroll.addView(body, new ScrollView.LayoutParams(-1, -1));
+        LinearLayout toolbar = new LinearLayout(this);
+        toolbar.setOrientation(LinearLayout.HORIZONTAL);
+        toolbar.setGravity(Gravity.CENTER_VERTICAL);
+        toolbar.setPadding(dp(15), dp(8), dp(15), dp(8));
+        toolbar.setBackgroundColor(DARK);
 
-        TextView mark = label("М.", 40, DARK, true);
-        mark.setGravity(Gravity.CENTER);
-        mark.setTextColor(LIME);
-        mark.setBackground(round(DARK, 23));
-        body.addView(mark, new LinearLayout.LayoutParams(dp(92), dp(92)));
+        TextView name = new TextView(this);
+        name.setText("М.  Мои деньги");
+        name.setTextSize(19);
+        name.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        name.setTextColor(LIME);
+        toolbar.addView(name, new LinearLayout.LayoutParams(0, dp(43), 1));
 
-        TextView small = label("ЛИЧНЫЕ ФИНАНСЫ", 12, MUTED, true);
-        small.setLetterSpacing(0.22f);
-        spacing(body, small, 23);
-        TextView heading = label("Мои деньги.", 32, DARK, true);
-        spacing(body, heading, 5);
-        TextView subtitle = label("Твои расходы, покупки и валюты — в одном месте.", 16, MUTED, false);
-        subtitle.setGravity(Gravity.CENTER);
-        spacing(body, subtitle, 11);
+        TextView cloud = new TextView(this);
+        cloud.setText("Облачные расходы");
+        cloud.setGravity(Gravity.CENTER);
+        cloud.setTextColor(DARK);
+        cloud.setTextSize(13);
+        cloud.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        cloud.setPadding(dp(12), 0, dp(12), 0);
+        cloud.setBackground(rounded(LIME, 12));
+        toolbar.addView(cloud, new LinearLayout.LayoutParams(-2, dp(42)));
+        cloud.setOnClickListener(v -> openCloudWithAccountChooser());
+        root.addView(toolbar, new LinearLayout.LayoutParams(-1, dp(60)));
 
-        LinearLayout card = new LinearLayout(this);
-        card.setOrientation(LinearLayout.VERTICAL);
-        card.setPadding(dp(20), dp(24), dp(20), dp(22));
-        card.setBackground(round(Color.WHITE, 22));
-        LinearLayout.LayoutParams cardLp = new LinearLayout.LayoutParams(-1, -2);
-        cardLp.topMargin = dp(36);
-        body.addView(card, cardLp);
+        TextView mode = new TextView(this);
+        mode.setText("Локальный учёт • записи только на этом телефоне");
+        mode.setTextSize(11);
+        mode.setTextColor(MUTED);
+        mode.setGravity(Gravity.CENTER);
+        mode.setPadding(dp(6), dp(6), dp(6), dp(6));
+        root.addView(mode, new LinearLayout.LayoutParams(-1, dp(29)));
 
-        TextView cardTitle = label("Семейный бюджет", 22, DARK, true);
-        card.addView(cardTitle);
-        TextView cardDetail = label("Вход через Google Chrome. Данные остаются в твоей закрытой Google Таблице.", 15, MUTED, false);
-        LinearLayout.LayoutParams detailLp = new LinearLayout.LayoutParams(-1, -2);
-        detailLp.topMargin = dp(10);
-        card.addView(cardDetail, detailLp);
+        webView = new WebView(this);
+        WebSettings settings = webView.getSettings();
+        settings.setJavaScriptEnabled(true);
+        settings.setDomStorageEnabled(true);
+        settings.setAllowFileAccess(false);
+        settings.setAllowContentAccess(false);
+        settings.setJavaScriptCanOpenWindowsAutomatically(false);
+        settings.setSupportMultipleWindows(false);
+        settings.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);
+        settings.setMediaPlaybackRequiresUserGesture(true);
+        webView.setWebViewClient(new WebViewClient() {
+            @Override
+            public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
+                Uri uri = request.getUrl();
+                if ("appassets.androidplatform.net".equals(uri.getHost())) return false;
+                if ("https".equals(uri.getScheme())) openExternal(uri);
+                return true;
+            }
+        });
+        root.addView(webView, new LinearLayout.LayoutParams(-1, 0, 1));
+        setContentView(root);
 
-        Button open = button("Открыть приложение", DARK, LIME);
-        LinearLayout.LayoutParams openLp = new LinearLayout.LayoutParams(-1, dp(58));
-        openLp.topMargin = dp(25);
-        card.addView(open, openLp);
-        open.setOnClickListener(v -> launchInBrowser(true));
-
-        Button browser = button("Открыть в Chrome", Color.rgb(239, 243, 235), DARK);
-        LinearLayout.LayoutParams browserLp = new LinearLayout.LayoutParams(-1, dp(53));
-        browserLp.topMargin = dp(9);
-        card.addView(browser, browserLp);
-        browser.setOnClickListener(v -> launchInBrowser(false));
-
-        TextView security = label("Доступ только через твой Google-аккаунт. Никаких банковских разрешений приложение не запрашивает.", 13, MUTED, false);
-        security.setGravity(Gravity.CENTER);
-        spacing(body, security, 31);
-
-        setContentView(scroll);
-
-        // First launch from home-screen immediately opens the already deployed web app.
-        if (savedState == null) {
-            scroll.post(() -> {
-                if (!launched) {
-                    launched = true;
-                    launchInBrowser(true);
-                }
-            });
+        try {
+            String html = readAsset("index.html");
+            // HTML is bundled within the APK, and has a stable secure origin for
+            // private localStorage. No Google sign-in is attempted in this WebView.
+            webView.loadDataWithBaseURL(APP_ORIGIN, html, "text/html", "UTF-8", APP_ORIGIN);
+        } catch (IOException ex) {
+            TextView fallback = new TextView(this);
+            fallback.setText("Не удалось загрузить интерфейс. Переустанови приложение.");
+            fallback.setTextColor(DARK);
+            fallback.setTextSize(18);
+            fallback.setGravity(Gravity.CENTER);
+            root.removeView(webView);
+            root.addView(fallback, new LinearLayout.LayoutParams(-1, 0, 1));
         }
     }
 
-    private void launchInBrowser(boolean customTab) {
-        Uri url = Uri.parse(APP_URL);
-        if (!"https".equals(url.getScheme()) || !"script.google.com".equals(url.getHost())) {
-            Toast.makeText(this, "Неверный адрес приложения", Toast.LENGTH_LONG).show();
-            return;
+    private String readAsset(String filename) throws IOException {
+        try (InputStream in = getAssets().open(filename);
+             ByteArrayOutputStream buf = new ByteArrayOutputStream()) {
+            byte[] bytes = new byte[8192];
+            int n;
+            while ((n = in.read(bytes)) != -1) buf.write(bytes, 0, n);
+            return buf.toString("UTF-8");
         }
-        Intent intent = new Intent(Intent.ACTION_VIEW, url);
-        intent.addCategory(Intent.CATEGORY_BROWSABLE);
-        if (customTab) {
-            // Custom Tabs share the real browser's Google login and cookies.
-            Bundle extras = new Bundle();
-            extras.putBinder("android.support.customtabs.extra.SESSION", null);
-            intent.putExtras(extras);
-            intent.putExtra("android.support.customtabs.extra.TOOLBAR_COLOR", DARK);
-            intent.putExtra("android.support.customtabs.extra.SHARE_MENU_ITEM", false);
-            intent.setPackage("com.android.chrome");
+    }
+
+    private void openCloudWithAccountChooser() {
+        // The server is deliberately restricted to its owner. Let Google ask
+        // the user to select the account owning the spreadsheet, instead of
+        // opening /exec with the wrong Chrome account and showing a Drive 404.
+        String chooser = "https://accounts.google.com/AccountChooser?continue="
+            + Uri.encode(CLOUD_WEB_APP);
+        openExternal(Uri.parse(chooser));
+    }
+
+    private void openExternal(Uri uri) {
+        Intent i = new Intent(Intent.ACTION_VIEW, uri);
+        i.addCategory(Intent.CATEGORY_BROWSABLE);
+        i.setPackage("com.android.chrome");
+        try {
+            startActivity(i);
+        } catch (ActivityNotFoundException ex) {
+            i.setPackage(null);
             try {
-                startActivity(intent);
-                return;
-            } catch (ActivityNotFoundException missingChrome) {
-                intent.setPackage(null);
+                startActivity(i);
+            } catch (ActivityNotFoundException noBrowser) {
+                Toast.makeText(this, "Для доступа к Google нужна установка Chrome", Toast.LENGTH_LONG).show();
             }
         }
-        try {
-            startActivity(intent);
-        } catch (ActivityNotFoundException e) {
-            Toast.makeText(this, "Установи Google Chrome и попробуй ещё раз", Toast.LENGTH_LONG).show();
-        }
     }
 
-    private TextView label(String text, int sp, int color, boolean bold) {
-        TextView view = new TextView(this);
-        view.setText(text);
-        view.setTextColor(color);
-        view.setTextSize(sp);
-        if (bold) view.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
-        return view;
-    }
-
-    private void spacing(LinearLayout parent, View child, int top) {
-        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
-        lp.topMargin = dp(top);
-        parent.addView(child, lp);
-    }
-
-    private Button button(String text, int bg, int color) {
-        Button view = new Button(this);
-        view.setText(text);
-        view.setTextColor(color);
-        view.setTextSize(15);
-        view.setAllCaps(false);
-        view.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
-        view.setBackground(round(bg, 16));
-        return view;
-    }
-
-    private GradientDrawable round(int color, float radius) {
-        GradientDrawable d = new GradientDrawable();
-        d.setColor(color);
-        d.setCornerRadius(dp(radius));
-        return d;
+    private GradientDrawable rounded(int bg, float radiusDp) {
+        GradientDrawable draw = new GradientDrawable();
+        draw.setColor(bg);
+        draw.setCornerRadius(dp(radiusDp));
+        return draw;
     }
 
     private int dp(float value) {
         return Math.round(value * getResources().getDisplayMetrics().density);
+    }
+
+    @Override
+    public void onBackPressed() {
+        if (webView != null && webView.canGoBack()) {
+            webView.goBack();
+        } else {
+            super.onBackPressed();
+        }
+    }
+
+    @Override
+    protected void onDestroy() {
+        if (webView != null) {
+            webView.destroy();
+            webView = null;
+        }
+        super.onDestroy();
     }
 }
