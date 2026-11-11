@@ -219,6 +219,7 @@ async function reload(){try{
 function period(){return rows.filter(x=>mid(x.date)===ymd(month))}
 function render(){const subset=period(),spent=subset.filter(x=>x.type!=='Доход'),total=spent.reduce((s,x)=>s+x.kgs,0),budget=Number(localStorage.getItem('monthly-budget')||0),progress=budget?Math.round(total/budget*100):0;
  $('monthLabel').textContent=nameMonth(month);$('reportMonth').textContent=nameMonth(month);$('total').textContent=fmt(total,2);$('txCount').textContent=`${subset.length} операций`;
+ if(!remote&&!secureCloudReady&&rows.length===0){$('total').textContent='—';$('txCount').textContent='Подключи данные из нашего чата';}
  $('budgetLabel').textContent=budget?money(budget):'не задан';$('budgetPct').textContent=budget?progress+'%':'—';$('budgetBar').style.width=Math.min(100,progress)+'%';
  $('today').textContent=money(spent.filter(x=>x.date===today()).reduce((s,x)=>s+x.kgs,0),2);$('workTotal').textContent=money(spent.filter(x=>x.category==='Работа').reduce((s,x)=>s+x.kgs,0),2);
  const bycat={};spent.forEach(x=>bycat[x.category]=(bycat[x.category]||0)+x.kgs);const arr=Object.entries(bycat).sort((a,b)=>b[1]-a[1]);
