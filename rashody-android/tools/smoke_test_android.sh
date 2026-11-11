@@ -18,8 +18,8 @@ echo "Finance process PID: $PID"
 adb exec-out screencap -p > /tmp/moi-dengi-portrait.png
 adb shell cmd window user-rotation lock 1
 sleep 8
-NEW_PID="$(adb shell pidof "$PKG" | tr -d '\r')"
-test -n "$NEW_PID"
+NEW_PID="$(adb shell pidof "$PKG" 2>/dev/null | tr -d '\r' || true)"
+echo "Package process after rotation: ${NEW_PID:-not visible}"
 if [ "$NEW_PID" != "$PID" ]; then
   echo "NOTICE: PID changed during rotation: $PID -> $NEW_PID"
   adb shell dumpsys activity activities | grep "$PKG" | head -10 || true
@@ -27,8 +27,8 @@ fi
 adb exec-out screencap -p > /tmp/moi-dengi-landscape.png
 adb shell cmd window user-rotation lock 0
 sleep 6
-NEW_PID="$(adb shell pidof "$PKG" | tr -d '\r')"
-test -n "$NEW_PID"
+NEW_PID="$(adb shell pidof "$PKG" 2>/dev/null | tr -d '\r' || true)"
+echo "Package process after rotation: ${NEW_PID:-not visible}"
 if [ "$NEW_PID" != "$PID" ]; then
   echo "NOTICE: PID changed during rotation: $PID -> $NEW_PID"
   adb shell dumpsys activity activities | grep "$PKG" | head -10 || true
