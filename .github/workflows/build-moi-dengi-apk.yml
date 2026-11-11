@@ -16,7 +16,7 @@ permissions:
 
 concurrency:
   group: moi-dengi-apk-build
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   build-apk:
@@ -71,13 +71,25 @@ jobs:
       - name: Publish direct APK download
         run: |
           set -euo pipefail
-          mkdir -p rashody-android/downloads
-          cp rashody-android/app/build/outputs/apk/debug/app-debug.apk rashody-android/downloads/moi-dengi.apk
+          # Keep the built APK outside the working tree while checking out
+          # the newest branch HEAD. This avoids binary rebase conflicts.
+          cp rashody-android/app/build/outputs/apk/debug/app-debug.apk /tmp/moi-dengi.apk
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -f rashody-android/downloads/moi-dengi.apk
-          if ! git diff --cached --quiet; then
+          for attempt in 1 2 3; do
+            git fetch origin main
+            git reset --hard origin/main
+            mkdir -p rashody-android/downloads
+            cp /tmp/moi-dengi.apk rashody-android/downloads/moi-dengi.apk
+            git add -f rashody-android/downloads/moi-dengi.apk
+            if git diff --cached --quiet; then
+              echo "APK is already current"
+              exit 0
+            fi
             git commit -m "chore: publish Moi Dengi APK [skip ci]"
-            git pull --rebase origin main
-            git push origin HEAD:main
-          fi
+            if git push origin HEAD:main; then
+              exit 0
+            fi
+          done
+          echo "Could not publish APK without racing other commits" >&2
+          exit 1
