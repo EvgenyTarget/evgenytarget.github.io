@@ -72,7 +72,9 @@ public final class MainActivity extends Activity {
                         InputStream data = getAssets().open("index.html");
                         WebResourceResponse response = new WebResourceResponse("text/html","UTF-8",data);
                         response.setStatusCodeAndReasonPhrase(200,"OK");
-                        response.getResponseHeaders().put("Cache-Control","no-store");
+                        java.util.Map<String,String> headers = new java.util.HashMap<>();
+                        headers.put("Cache-Control","no-store");
+                        response.setResponseHeaders(headers);
                         return response;
                     } catch (Exception ignored) {
                         return new WebResourceResponse("text/plain","UTF-8",
