@@ -1,0 +1,78 @@
+name: Build Moi Dengi secure browser portal
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'rashody-android-browser/**'
+      - '.github/workflows/build-moi-dengi-chrome.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: moi-dengi-browser-portal
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Android SDK
+        run: |
+          set -euo pipefail
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install "platforms;android-35" "build-tools;35.0.0"
+      - name: Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+      - name: Validate no unauthorized Google API bridge
+        run: |
+          set -euo pipefail
+          SRC=rashody-android-browser/app/src/main/java/kg/evgeny/moidengi/portal/MainActivity.java
+          grep -q 'https://script.google.com/macros/s/' "$SRC"
+          grep -q 'CustomTabsIntent' "$SRC"
+          ! grep -R -E -n 'sheets.googleapis.com|googleapis.com/auth/spreadsheets|client_secret|Bearer ' rashody-android-browser/app
+      - name: Build APK
+        run: gradle --no-daemon -p rashody-android-browser :app:assembleDebug
+      - name: Validate signed APK and package
+        run: |
+          set -euo pipefail
+          APK=rashody-android-browser/app/build/outputs/apk/debug/app-debug.apk
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose "$APK"
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$APK" | grep "package: name='kg.evgeny.moidengi.portal'"
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$APK" | grep "versionName='3.0.0'"
+          test "$(wc -c < "$APK")" -gt 5000
+      - name: Save APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: MoiDengi-3-0-Chrome-Portal
+          path: rashody-android-browser/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 30
+      - name: Publish standalone launcher download
+        run: |
+          set -euo pipefail
+          cp rashody-android-browser/app/build/outputs/apk/debug/app-debug.apk /tmp/MoiDengi-Online.apk
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          for attempt in 1 2 3; do
+            git fetch origin main
+            git reset --hard origin/main
+            mkdir -p rashody-android-browser/downloads
+            cp /tmp/MoiDengi-Online.apk rashody-android-browser/downloads/MoiDengi-Online.apk
+            git add -f rashody-android-browser/downloads/MoiDengi-Online.apk
+            if git diff --cached --quiet; then exit 0; fi
+            git commit -m "release: online finance portal APK [skip ci]"
+            if git push origin HEAD:main; then exit 0; fi
+          done
+          exit 1
