@@ -15,6 +15,11 @@ android {
     }
 
     buildTypes {
+        // Disallow WebView remote debugging and Android debug capabilities
+        // even for this internally distributed build.
+        debug {
+            debuggable false
+        }
         release {
             minifyEnabled false
         }
