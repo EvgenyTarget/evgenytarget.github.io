@@ -54,7 +54,7 @@ jobs:
           import re
           p=Path("rashody-android/app/src/main/assets/index.html")
           t=p.read_text()
-          assert all(x in t for x in ['id="secure-pair"', 'function makeDeviceKey()', 'function secureSync(force)', 'id="tab-shopping"'])
+          assert all(x in t for x in ['nativeSheets', '__nativeSheetsReply', 'id="tab-shopping"', 'function renderShopping()'])
           assert "exp-20261110-001" not in t, "Private financial records must not ship in public APK"
           js=re.search(r"<script>([\s\S]*?)</script>",t).group(1)
           Path("/tmp/finance-web-ui.js").write_text(js)
@@ -75,8 +75,8 @@ jobs:
           "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$APK" | grep "sdkVersion:'26'"
           test "$(wc -c < "$APK")" -gt 5000
           unzip -p "$APK" assets/index.html | grep -q 'id="secure-pair"'
-          unzip -p "$APK" assets/index.html | grep -q 'function makeDeviceKey()'
-          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$APK" | grep "versionName='1.2.0'"
+          unzip -p "$APK" assets/index.html | grep -q 'nativeSheets'
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$APK" | grep "versionName='2.0.0'"
 
       - name: Keep a downloadable build artifact
         uses: actions/upload-artifact@v4
