@@ -121,12 +121,30 @@ button:active{transform:scale(.965)}
 .shopping-meta{color:#8b998e;font-size:11px;margin-top:4px;overflow-wrap:anywhere;line-height:1.45}.shopping-urgent{font-size:9px;border-radius:6px;padding:3px 6px;color:#b45f36;background:#fff0dc;font-weight:800;display:inline-block;margin-left:6px}
 .shop-action{background:#f1f5ee;color:#42624f;border-radius:10px;display:grid;place-items:center;font-size:15px;min-width:31px;height:33px}.shop-action.delete{color:#a55a4f;background:#faf0ed}
 @media(max-width:400px){.nav-btn{min-width:39px;font-size:8px}.nav{padding:0 2px}.addnav{width:44px;height:44px}.shopping-add{padding:14px}.shop-action{min-width:28px;height:31px}}
+
+/* Protected ChatGPT-to-app sync, separate from the private Google spreadsheet. */
+#secure-pair{background:#ffffff;border:1px solid #e5eee2;border-radius:18px;padding:16px;margin:2px 0 18px;box-shadow:0 8px 26px #2035250a}
+#secure-pair h3{font-size:15px;margin:0 0 7px;color:#1d3b30}
+#secure-pair p{margin:0 0 12px;color:#607367;font-size:12px;line-height:1.55}
+#secure-pair .secure-buttons{display:flex;gap:8px;flex-wrap:wrap}
+#secure-pair button{background:#1e4032;color:white;border-radius:12px;padding:11px 15px;font-size:12px;font-weight:700;min-height:42px}
+#secure-pair button.secondary{background:#eef4ec;color:#214236}
+#secure-pair code{display:block;max-width:100%;overflow-wrap:anywhere;max-height:90px;overflow:auto;font-family:monospace;font-size:10px;background:#f4f6f2;color:#173025;border-radius:9px;padding:9px;margin-top:10px}
+#secure-pair .tiny{font-size:11px;margin:9px 0 0}
 </style>
 </head>
 <body>
 <div id="app">
   <header class="top"><div class="top-start"><div class="brand-symbol">м.</div><div><div class="eyebrow">ЛИЧНЫЕ ФИНАНСЫ</div><div class="brand">Мои деньги<span style="color:#72a55f">.</span></div></div></div><div class="right"><button class="iconbtn" id="sync" title="Обновить данные" aria-label="Обновить"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M20 11a8 8 0 0 0-13.7-5.7L4 8"/><path d="M4 4v4h4"/><path d="M4 13a8 8 0 0 0 13.7 5.7L20 16"/><path d="M16 16h4v4"/></svg></button><div class="logo">М</div></div></header>
   <div id="status" class="status">Подключение…</div>
+  <section id="secure-pair" aria-live="polite">
+    <h3>Синхронизация с нашим чатом</h3>
+    <p id="secureMessage">Здесь будут расходы и покупки, которые ты отправляешь мне в ChatGPT. Содержимое передаётся в зашифрованном виде.</p>
+    <div class="secure-buttons"><button type="button" id="secureConnect">Подключить один раз</button><button type="button" class="secondary" id="secureRefresh">Обновить записи</button></div>
+    <code id="publicKey" hidden></code>
+    <p class="tiny" id="secureHelp">Ключ остаётся на телефоне. Для подключения отправь мне только публичный код.</p>
+  </section>
+
   <main id="tab-overview" class="panel active">
     <div class="month-nav"><button id="prevMonth" aria-label="Предыдущий месяц">‹</button><b id="monthLabel"></b><button id="nextMonth" aria-label="Следующий месяц">›</button></div>
     <section class="hero card"><div class="hero-top"><div class="hero-caption">Ваш финансовый обзор</div><div class="hero-pill"><i></i> Месяц в цифрах</div></div><div class="label">Потрачено за месяц</div><div class="amount"><span id="total">0</span> <span>сом</span></div><div class="meta"><div><div id="txCount">0 операций</div><div style="margin-top:8px">Бюджет <span id="budgetLabel">не задан</span></div></div><div id="budgetPct">—</div></div><div class="mini-progress"><i id="budgetBar"></i></div></section>
@@ -171,6 +189,8 @@ const categories=['Еда','Продукты','Кафе','Транспорт','�
 const colors=['#386B55','#74A48D','#B6CF7C','#EAC98A','#C7A379','#9299B4','#94AFBE','#D6BB76','#98BD8F','#DBB2A6','#9FA6C3','#A3D2BD','#7D9C8C','#C8ACD2','#E0B582','#B3C5AF','#D8D8D8'];
 const emoji={'Еда':'🍲','Продукты':'🛒','Кафе':'☕','Транспорт':'🚕','Жильё':'🏠','Коммунальные':'⚡','Дом':'🏡','Документы':'📄','Работа':'💼','Развлечения':'🎬','Здоровье':'💊','Дети':'🧸','Покупки':'🛍️','Личное':'✂️','Путешествия':'✈️','Связь':'📱','Другое':'◈'};
 const $=id=>document.getElementById(id);let rows=[],shopping=[],shoppingFilter='todo',buyEditing=null,buyDraftId=null,expenseDraftId=null,shoppingBusy=false,connected=false,month=new Date(),editing=null,fx=null,parsed=[],saving=false,lastSync='—';const remote=!!(window.google&&google.script&&google.script.run);
+let secureCloudIds=new Set(),secureShoppingIds=new Set(),secureCloudReady=false,secureSyncing=false;
+
 const fmt=(n,d=0)=>new Intl.NumberFormat('ru-RU',{maximumFractionDigits:d,minimumFractionDigits:d}).format(Number(n)||0);
 const money=(n,d=0)=>fmt(n,d)+' сом';
 const newid=prefix=>prefix+'-'+(typeof crypto!=='undefined'&&crypto.randomUUID?crypto.randomUUID():Date.now().toString(36)+'-'+Math.random().toString(36).slice(2));
@@ -183,15 +203,15 @@ const ymd=d=>`${d.getFullYear()}-${pad(d.getMonth()+1)}`;
 function safe(s){return String(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
 function ping(text){$('toast').textContent=text;$('toast').classList.add('show');clearTimeout(ping.timer);ping.timer=setTimeout(()=>$('toast').classList.remove('show'),3400)}
 function call(method,...args){return new Promise((resolve,reject)=>google.script.run.withSuccessHandler(resolve).withFailureHandler(e=>reject(Error(e.message||String(e))))[method](...args));}
-function persist(){if(!remote)localStorage.setItem('my-expenses-v1',JSON.stringify(rows))}
-function persistShopping(){if(!remote)localStorage.setItem('my-shopping-v1',JSON.stringify(shopping))}
+function persist(){if(!remote)localStorage.setItem('my-expenses-v1',JSON.stringify(rows.filter(x=>!secureCloudIds.has(x.id))))}
+function persistShopping(){if(!remote)localStorage.setItem('my-shopping-v1',JSON.stringify(shopping.filter(x=>!secureShoppingIds.has(x.id))))}
 async function reload(){try{
  if(remote){const results=await Promise.all([call('readAll'),call('readShoppingList')]);
   if(!Array.isArray(results[0])||!Array.isArray(results[1]))throw Error('Неверный ответ сервера');
   rows=results[0].filter(x=>x&&x.id);shopping=results[1].filter(x=>x&&x.id);
   localStorage.setItem('last-expenses-cache',JSON.stringify(rows));localStorage.setItem('last-shopping-cache',JSON.stringify(shopping));
   connected=true;$('status').classList.remove('offline');$('status').textContent='Подключено к закрытой Google Таблице';
- }else {rows=localJson('my-expenses-v1',[]);shopping=localJson('my-shopping-v1',[]);connected=false;$('status').classList.add('offline');$('status').textContent='Локальный режим · без синхронизации';}
+ }else {rows=localJson('my-expenses-v1',[]);shopping=localJson('my-shopping-v1',[]);applyCloudCache();connected=secureCloudReady;$('status').classList.toggle('offline',!secureCloudReady);$('status').textContent=secureCloudReady?'Получены защищённые записи из чата':'Ожидает подключения · данные только на телефоне';}
  lastSync=new Date().toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'});render();renderShopping();return true;
  }catch(e){connected=false;rows=localJson('last-expenses-cache',[]);shopping=localJson('last-shopping-cache',[]);$('status').classList.add('offline');$('status').textContent='Синхронизация недоступна · только просмотр';render();renderShopping();ping('Ошибка синхронизации: '+e.message)}
 }
@@ -210,7 +230,7 @@ function render(){const subset=period(),spent=subset.filter(x=>x.type!=='Дох�
  document.querySelectorAll('.txitem').forEach(el=>el.addEventListener('click',()=>openSheet(rows.find(x=>x.id===el.dataset.id))));
  $('reportCats').innerHTML=arr.map(([cat,val])=>`<div class="kv"><span>${emoji[cat]||'◈'} ${safe(cat)}</span><b>${money(val,2)}</b></div>`).join('')||'<div class="empty">Нет расходов</div>';
  let byp={};subset.forEach(x=>{const key=x.project||'Семья';byp[key]=(byp[key]||0)+(x.type==='Доход'?-x.kgs:x.kgs)});$('reportProjects').innerHTML=Object.entries(byp).sort((a,b)=>b[1]-a[1]).map(([p,v])=>`<div class="kv"><span>${safe(p)}</span><b>${money(v,2)}</b></div>`).join('')||'<div class="empty">Нет записей</div>';
- $('dataCount').textContent=rows.length;$('syncTime').textContent=lastSync;$('modeLabel').textContent=remote?(connected?'Google Таблица':'Нет соединения'):'Только телефон';$('modeExplain').textContent=remote?(connected?'Расходы и список покупок сохраняются в закрытой Google Таблице.':'Связь с таблицей не подтверждена: изменения не будут приняты до восстановления соединения.'):'Операции и покупки хранятся только в этом браузере. Чтобы ChatGPT обновлял приложение, нужно открыть закрытое веб-приложение Apps Script.';
+ $('dataCount').textContent=rows.length;$('syncTime').textContent=lastSync;$('modeLabel').textContent=remote?(connected?'Google Таблица':'Нет соединения'):(secureCloudReady?'Защищённые данные из чата':'Только телефон');$('modeExplain').textContent=remote?(connected?'Расходы и список покупок сохраняются в закрытой Google Таблице.':'Связь с таблицей не подтверждена.'):(secureCloudReady?'Отправленные в ChatGPT расходы обновляются из зашифрованного файла. Новые записи с телефона остаются локальными, пока не отправлены в чат.':'Сначала подключи защищённую синхронизацию. Локальные операции сохраняются только на этом телефоне.');
 }
 function switchTab(tab){document.querySelectorAll('.panel').forEach(el=>el.classList.toggle('active',el.id==='tab-'+tab));document.querySelectorAll('.nav-btn').forEach(el=>el.classList.toggle('selected',el.dataset.tab===tab));window.scrollTo({top:0,behavior:'smooth'});if(tab==='converter')loadRates();}
 function shiftMonth(delta){month=new Date(month.getFullYear(),month.getMonth()+delta,1);render()}
@@ -247,7 +267,7 @@ function closeSheet(){$('overlay').classList.remove('show');editing=null}
 function updateKgsField(override){const c=$('currency').value;$('kgsField').style.display=c==='KGS'?'none':'flex';const v=Number.isFinite(override)?Number(override):(fx&&Date.now()-fx.fetched>48*3600e3?null:convert(+$('amount').value,c,'KGS'));$('kgs').value=c==='KGS'?'':v==null||!Number.isFinite(v)||v<=0?'':v.toFixed(2);$('fxHint').textContent=c==='KGS'?'':v==null?'Курс недоступен. Введи фактически списанные сомы или дождись курса.':'Справочный расчёт. Если банк списал другую сумму, укажи фактическую.'}
 function formPayload(){const amount=Number($('amount').value),currency=$('currency').value,kgs=currency==='KGS'?amount:Number($('kgs').value);let note=$('note').value; if(currency!=='KGS'&&fx&&note.indexOf('Справочный курс')<0) note=(note?note+' | ':'')+'Справочный курс '+String(fx.date||'')+'; банк может списать иначе';return {id:editing||expenseDraftId||newid('exp'),date:$('date').value,description:$('description').value,category:$('category').value,project:$('project').value,amount,currency,kgs,type:$('type').value,note}}
 function validate(x){if(!['KGS','USD','VND','KZT'].includes(x.currency)||!validDate(x.date)||!String(x.description||'').trim()||!Number.isFinite(x.amount)||!Number.isFinite(x.kgs)||!(x.amount>0)||!(x.kgs>0)||x.amount>1e12||x.kgs>1e12)throw Error('Проверь дату, название, сумму и эквивалент в сомах');if(x.currency==='KGS'&&Math.abs(x.amount-x.kgs)>.01)throw Error('В сомах суммы должны совпадать')}
-async function save(x,id){validate(x);if(remote){if(!connected)throw Error('Нет связи с Google Таблицей');await call(id?'replaceExpense':'addExpense',x)}else {if(id){rows=rows.map(r=>r.id===id?{...x,id}:r)}else if(!rows.some(r=>r.id===x.id)){rows.push(x)}persist();}}
+async function save(x,id){if(id&&secureCloudIds.has(id))throw Error("Эту операцию можно изменить через наш чат");validate(x);if(remote){if(!connected)throw Error('Нет связи с Google Таблицей');await call(id?'replaceExpense':'addExpense',x)}else {if(id){rows=rows.map(r=>r.id===id?{...x,id}:r)}else if(!rows.some(r=>r.id===x.id)){rows.push(x)}persist();}}
 async function withBusy(fn){if(saving)return;saving=true;document.querySelectorAll('#overlay button').forEach(b=>b.disabled=true);try{await fn();const ok=await reload();if(remote&&!ok)throw Error('Запись отправлена, но проверить её не удалось: открой таблицу');closeSheet();ping('Сохранено')}catch(e){ping(e.message||String(e))}finally{saving=false;document.querySelectorAll('#overlay button').forEach(b=>b.disabled=false)}}
 function convert(a,from,to){if(from===to)return a;if(!fx||!fx.rates||!(fx.rates[from]>0)||!(fx.rates[to]>0))return null;return a/fx.rates[from]*fx.rates[to]}
 async function loadRates(force=false){
@@ -270,7 +290,7 @@ function download(name,text,type){const blob=new Blob([text],{type});const url=U
 function csv(){const all=[['ID','Дата','Описание','Категория','Проект','Сумма KGS','Исходная сумма','Валюта','Тип','Примечание'],...rows.map(x=>[x.id,x.date,x.description,x.category,x.project,x.kgs,x.amount,x.currency,x.type,x.note])];download('rashody_'+today()+'.csv','\ufeff'+all.map(r=>r.map(c=>{let x=String(c??'');if(/^[\s\u0000-\u001f]*[=+@\-]/.test(x))x="'"+x;return '"'+x.replace(/"/g,'""')+'"'}).join(';')).join('\r\n'),'text/csv;charset=utf-8')}
 function shopText(){return {id:buyEditing||buyDraftId||newid('buy'),name:$('shopName').value.trim(),quantity:Number($('shopQty').value),unit:$('shopUnit').value,category:$('shopCategory').value,priority:$('shopPriority').value,note:$('shopNote').value.trim()}}
 function clearShoppingForm(){$('shopForm').reset();$('shopQty').value='1';buyEditing=null;buyDraftId=null;$('shopSubmit').textContent='+ Добавить в список';$('shopCancelEdit').hidden=true}
-function fillShoppingForm(id){const x=shopping.find(z=>z.id===id);if(!x)return;buyEditing=id;buyDraftId=null;$('shopName').value=x.name;$('shopQty').value=x.quantity;$('shopUnit').value=x.unit;$('shopCategory').value=x.category;$('shopPriority').value=x.priority;$('shopNote').value=x.note||'';$('shopSubmit').textContent='Сохранить изменения';$('shopCancelEdit').hidden=false;$('shopName').focus();window.scrollTo({top:0,behavior:'smooth'})}
+function fillShoppingForm(id){if(secureShoppingIds.has(id)){ping("Облачную покупку редактируй через чат");return}const x=shopping.find(z=>z.id===id);if(!x)return;buyEditing=id;buyDraftId=null;$('shopName').value=x.name;$('shopQty').value=x.quantity;$('shopUnit').value=x.unit;$('shopCategory').value=x.category;$('shopPriority').value=x.priority;$('shopNote').value=x.note||'';$('shopSubmit').textContent='Сохранить изменения';$('shopCancelEdit').hidden=false;$('shopName').focus();window.scrollTo({top:0,behavior:'smooth'})}
 async function shoppingAction(fn){if(shoppingBusy)return;shoppingBusy=true;const btns=document.querySelectorAll('#tab-shopping button, #tab-shopping input[type=checkbox]');btns.forEach(x=>x.disabled=true);
  try{await fn();if(remote){const ok=await reload();if(!ok)throw Error('Запись отправлена, но подтверждение обновления не получено. Проверь таблицу.')}else renderShopping();ping('Список обновлён');}
  catch(e){renderShopping();ping('Ошибка: '+(e.message||String(e)))}finally{shoppingBusy=false;btns.forEach(x=>x.disabled=false)}}
@@ -284,9 +304,9 @@ function renderShopping(){const done=shopping.filter(x=>x.done).length,left=shop
  <button type="button" class="shop-action shop-edit" aria-label="Изменить ${safe(x.name)}">✎</button><button type="button" class="shop-action delete shop-delete" aria-label="Удалить ${safe(x.name)}">×</button></div>`).join('')||'<div class="empty">'+(shoppingFilter==='done'?'Пока ничего не отмечено как купленное.':'Список пуст. Добавь первую покупку выше.')+'</div>';
  document.querySelectorAll('.shop-filter').forEach(b=>b.classList.toggle('active',b.dataset.shopFilter===shoppingFilter));
  $('shoppingList').querySelectorAll('.shopping-entry').forEach(el=>{const id=el.dataset.id;
-  el.querySelector('.shop-check').onchange=e=>{const wanted=e.target.checked;const prev=shopping.find(x=>x.id===id);if(!prev)return;shoppingAction(async()=>{if(remote){if(!connected)throw Error('Нет связи с таблицей');await call('setShoppingDone',id,wanted)}else{prev.done=wanted;prev.completed=wanted?new Date().toISOString():'';persistShopping()}})};
+  el.querySelector('.shop-check').onchange=e=>{const wanted=e.target.checked;const prev=shopping.find(x=>x.id===id);if(!prev)return;shoppingAction(async()=>{if(remote){if(!connected)throw Error('Нет связи с таблицей');await call('setShoppingDone',id,wanted)}else{prev.done=wanted;prev.completed=wanted?new Date().toISOString():'';if(secureShoppingIds.has(id)){const overrides=JSON.parse(localStorage.getItem('my-shopping-overrides-v1')||'{}');overrides[id]=wanted;localStorage.setItem('my-shopping-overrides-v1',JSON.stringify(overrides))}else persistShopping()}})};
   el.querySelector('.shop-edit').onclick=()=>fillShoppingForm(id);
-  el.querySelector('.shop-delete').onclick=()=>{if(!confirm('Удалить «'+(shopping.find(x=>x.id===id)?.name||'покупку')+'» из списка?'))return;
+  el.querySelector('.shop-delete').onclick=()=>{if(secureShoppingIds.has(id)){ping('Облачную покупку удаляй через чат');return}if(!confirm('Удалить «'+(shopping.find(x=>x.id===id)?.name||'покупку')+'» из списка?'))return;
    shoppingAction(async()=>{if(remote){if(!connected)throw Error('Нет связи с таблицей');await call('deleteShoppingItem',id)}else{shopping=shopping.filter(x=>x.id!==id);persistShopping()}})};
  });
 }
@@ -304,8 +324,8 @@ function initShopping(){
 function bindings(){
  document.querySelectorAll('.nav-btn').forEach(b=>b.addEventListener('click',()=>switchTab(b.dataset.tab)));
  $('openAdd').onclick=()=>openSheet();$('quickAdd').onclick=()=>openSheet();$('closeOverlay').onclick=closeSheet;$('overlay').addEventListener('click',e=>{if(e.target===$('overlay'))closeSheet()});
- $('prevMonth').onclick=()=>shiftMonth(-1);$('nextMonth').onclick=()=>shiftMonth(1);$('prevReport').onclick=()=>shiftMonth(-1);$('nextReport').onclick=()=>shiftMonth(1);$('search').oninput=render;$('filterCat').onchange=render;$('sync').onclick=()=>{reload();loadRates(true)};
- $('saveExpense').onclick=()=>withBusy(async()=>{const x=formPayload();if(!editing)expenseDraftId=x.id;await save(x,editing)});$('deleteExpense').onclick=()=>{if(!editing||!confirm('Удалить эту операцию без возможности отмены?'))return;withBusy(async()=>{if(remote)await call('removeExpense',editing);else{rows=rows.filter(x=>x.id!==editing);persist()}})};
+ $('prevMonth').onclick=()=>shiftMonth(-1);$('nextMonth').onclick=()=>shiftMonth(1);$('prevReport').onclick=()=>shiftMonth(-1);$('nextReport').onclick=()=>shiftMonth(1);$('search').oninput=render;$('filterCat').onchange=render;$('sync').onclick=async()=>{await reload();if(!remote)await secureSync();loadRates(true)};
+ $('saveExpense').onclick=()=>withBusy(async()=>{const x=formPayload();if(!editing)expenseDraftId=x.id;await save(x,editing)});$('deleteExpense').onclick=()=>{if(editing&&secureCloudIds.has(editing)){ping('Облачную запись удаляй через чат');return}if(!editing||!confirm('Удалить эту операцию без возможности отмены?'))return;withBusy(async()=>{if(remote)await call('removeExpense',editing);else{rows=rows.filter(x=>x.id!==editing);persist()}})};
  $('currency').onchange=()=>updateKgsField();$('amount').addEventListener('input',()=>updateKgsField());$('description').addEventListener('input',()=>{if(!editing){const c=classify($('description').value);$('category').value=c;$('project').value=guessProject($('description').value,c)}});
  $('parseBulk').onclick=()=>{parsed=parseLines($('bulkText').value);$('bulkPreview').style.display='block';$('bulkPreview').textContent=parsed.length?parsed.map(x=>`${x.description} — ${fmt(x.amount,x.currency==='VND'?0:2)} ${x.currency} → ${x.kgs==null?'НУЖЕН КУРС ИЛИ СУММА В СОМАХ':fmt(x.kgs,2)+' сом'} · ${x.category}`).join('\n'):'Не нашёл однозначных строк с суммой в конце. Проверь текст и валюту.';$('saveBulk').style.display=parsed.length?'block':'none'};
  $('saveBulk').onclick=()=>withBusy(async()=>{if(!parsed.length)throw Error('Нет операций');for(const entry of parsed){if(entry.currency!=='KGS'&&!(entry.kgs>0))throw Error('Не удалось подтвердить пересчёт в сомы. Обнови курс.');validate(entry)}if(remote){if(!connected)throw Error('Нет связи с Google Таблицей');await call('addExpensesBatch',parsed)}else{const ids=new Set(rows.map(x=>x.id));const missing=parsed.filter(x=>!ids.has(x.id));rows.push(...missing);persist()}});
@@ -333,7 +353,76 @@ function bindings(){
  }catch(err){ping(err.message||String(err))}finally{e.target.value=''}
  };
 }
-function boot(){categories.forEach(c=>{for(const id of ['category','filterCat']){const op=document.createElement('option');op.value=c;op.textContent=c;$(id).appendChild(op)}});month=new Date(new Date().getFullYear(),new Date().getMonth(),1);bindings();loadRates();reload()}
+
+// A device-specific P-256 ECDH private key is stored nonextractably in IndexedDB.
+// ChatGPT receives ONLY its public key and publishes a snapshot encrypted to it.
+// No Google account, API token or spreadsheet is made publicly accessible.
+const FEED_URL='https://raw.githubusercontent.com/EvgenyTarget/evgenytarget.github.io/main/rashody/data.enc.json';
+const utf8=s=>new TextEncoder().encode(s);
+function b64u(buf){let a=new Uint8Array(buf),s='';for(let i=0;i<a.length;i++)s+=String.fromCharCode(a[i]);return btoa(s).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'')}
+function unb64u(s){s=String(s).replace(/-/g,'+').replace(/_/g,'/');let bin=atob(s.padEnd(Math.ceil(s.length/4)*4,'=')),u=new Uint8Array(bin.length);for(let i=0;i<u.length;i++)u[i]=bin.charCodeAt(i);return u}
+function dbPromise(){return new Promise((resolve,reject)=>{const r=indexedDB.open('my-dengi-private-keys',1);r.onupgradeneeded=()=>r.result.createObjectStore('keys');r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error)})}
+async function keyGet(){const db=await dbPromise();return new Promise((resolve,reject)=>{const tx=db.transaction('keys','readonly'),q=tx.objectStore('keys').get('device');q.onsuccess=()=>{resolve(q.result||null);db.close()};q.onerror=()=>{reject(q.error);db.close()}})}
+async function keyPut(v){const db=await dbPromise();return new Promise((resolve,reject)=>{const tx=db.transaction('keys','readwrite');tx.objectStore('keys').put(v,'device');tx.oncomplete=()=>{db.close();resolve()};tx.onerror=()=>{db.close();reject(tx.error)}})}
+async function makeDeviceKey(){const old=await keyGet();if(old?.privateKey&&old?.publicSpki)return old;
+const raw=await crypto.subtle.generateKey({name:'ECDH',namedCurve:'P-256'},true,['deriveBits']);
+const privateJwk=await crypto.subtle.exportKey('jwk',raw.privateKey);
+const privateKey=await crypto.subtle.importKey('jwk',privateJwk,{name:'ECDH',namedCurve:'P-256'},false,['deriveBits']);
+const publicSpki=b64u(await crypto.subtle.exportKey('spki',raw.publicKey));
+const data={privateKey,publicSpki};await keyPut(data);return data}
+function applyCloudCache(){if(remote)return;let c;try{c=JSON.parse(localStorage.getItem('secure-cloud-cache-v1')||'null')}catch(e){c=null}
+ if(!c||!Array.isArray(c.entries)||!Array.isArray(c.shopping))return;
+ secureCloudIds=new Set(c.entries.map(x=>String(x.id)));secureShoppingIds=new Set(c.shopping.map(x=>String(x.id)));
+ let overrides={};try{overrides=JSON.parse(localStorage.getItem('my-shopping-overrides-v1')||'{}')}catch(e){}
+ const localRows=localJson('my-expenses-v1',[]).filter(x=>!secureCloudIds.has(x.id));
+ const localBuy=localJson('my-shopping-v1',[]).filter(x=>!secureShoppingIds.has(x.id));
+ rows=[...c.entries,...localRows];shopping=[...c.shopping.map(x=>({...x,done:Object.hasOwn(overrides,x.id)?!!overrides[x.id]:!!x.done})),...localBuy];secureCloudReady=true;
+}
+async function secureSync(force){if(remote||secureSyncing)return;secureSyncing=true;
+try{const key=await keyGet();if(!key){$('secureMessage').textContent='Подключи один раз, чтобы получать расходы из чата.';return}
+ const ctrl=new AbortController(),timer=setTimeout(()=>ctrl.abort(),12000);let response;
+ try{response=await fetch(FEED_URL+'?t='+Date.now(),{cache:'no-store',signal:ctrl.signal})}finally{clearTimeout(timer)}
+ if(response.status===404){$('secureMessage').textContent='Ключ создан. Отправь публичный код в наш чат, чтобы я подключил расходы.';return}
+ if(!response.ok)throw Error('Источник данных временно недоступен ('+response.status+')');
+ if(Number(response.headers.get('content-length')||0)>4000000)throw Error('Слишком большой ответ');
+ const payload=await response.text();if(payload.length>4000000)throw Error('Слишком большой ответ');
+ const packet=JSON.parse(payload);if(packet.version!==1||packet.alg!=='P256-HKDF-SHA256-AES256GCM')throw Error('Неподдерживаемый формат');
+ if(!packet.ephemeral||!packet.iv||!packet.salt||!packet.ciphertext)throw Error('Неполный пакет');
+ const peer=await crypto.subtle.importKey('spki',unb64u(packet.ephemeral),{name:'ECDH',namedCurve:'P-256'},false,[]);
+ const secret=await crypto.subtle.deriveBits({name:'ECDH',public:peer},key.privateKey,256);
+ const material=await crypto.subtle.importKey('raw',secret,'HKDF',false,['deriveKey']);
+ const aes=await crypto.subtle.deriveKey({name:'HKDF',hash:'SHA-256',salt:unb64u(packet.salt),info:utf8('moi-dengi-feed-v1')},material,{name:'AES-GCM',length:256},false,['decrypt']);
+ const clear=await crypto.subtle.decrypt({name:'AES-GCM',iv:unb64u(packet.iv),additionalData:utf8('moi-dengi-v1'),tagLength:128},aes,unb64u(packet.ciphertext));
+ const data=JSON.parse(new TextDecoder().decode(clear));
+ if(data.format!=='moi-dengi-v1'||!Array.isArray(data.entries)||!Array.isArray(data.shopping)||data.entries.length>10000||data.shopping.length>10000)throw Error('Повреждены данные');
+ for(const e of data.entries){if(typeof e.id!=='string'||!validDate(e.date)||!Number.isFinite(Number(e.kgs))||Number(e.kgs)<0)throw Error('Некорректная операция')}
+ for(const x of data.shopping){if(typeof x.id!=='string'||!x.name)throw Error('Некорректная покупка')}
+ localStorage.setItem('secure-cloud-cache-v1',JSON.stringify(data));applyCloudCache();connected=true;
+ const n=data.entries.length;$('secureMessage').textContent='Обновлено: '+n+' операций из нашего чата. Отметки покупок сохраняются на телефоне.';
+ $('secureHelp').textContent='Передача зашифрована. Последнее обновление: '+new Date().toLocaleString('ru-RU');
+ $('status').classList.remove('offline');$('status').textContent='Данные из чата · защищённая синхронизация';
+ lastSync=new Date().toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'});render();renderShopping();
+ }catch(e){$('secureMessage').textContent=secureCloudReady?'Нет связи — последние записи сохранены на телефоне. '+e.message:'Данные ещё не загружены: '+e.message;if(force)ping('Синхронизация: '+e.message)}finally{secureSyncing=false}
+}
+async function secureStart(){if(remote){$('secure-pair').hidden=true;return}
+ try{if(!crypto.subtle||!indexedDB)throw Error('Нужна современная версия Android System WebView');
+ const key=await keyGet();if(key){$('secureConnect').textContent='Отправить ключ повторно';$('publicKey').textContent=key.publicSpki;$('publicKey').hidden=false;await secureSync()}
+ }catch(e){$('secureMessage').textContent='Не удалось создать безопасное соединение: '+e.message}
+ $('secureConnect').onclick=async()=>{try{const key=await makeDeviceKey();$('publicKey').textContent=key.publicSpki;$('publicKey').hidden=false;
+ $('secureMessage').textContent='Публичный ключ готов. Отправь его в наш чат один раз — я подключу твои записи.';
+ $('secureConnect').textContent='Отправить ключ повторно';
+ const msg='Подключи Мои деньги к нашему чату. Публичный ключ P-256: '+key.publicSpki;
+ if(window.AndroidBridge?.sharePublicKey){window.AndroidBridge.sharePublicKey(msg)}
+ else if(navigator.share){await navigator.share({text:msg})}
+ else if(navigator.clipboard?.writeText){await navigator.clipboard.writeText(msg);ping('Ключ скопирован, отправь в наш чат')}
+ else{const tmp=document.createElement('textarea');tmp.value=msg;document.body.appendChild(tmp);tmp.select();document.execCommand('copy');tmp.remove();ping('Ключ скопирован')}
+ }catch(e){ping('Не удалось создать ключ: '+e.message)}};
+ $('secureRefresh').onclick=()=>secureSync(true);
+ document.addEventListener('visibilitychange',()=>{if(!document.hidden)secureSync()});
+ setInterval(()=>{if(!document.hidden)secureSync()},600000)
+}
+
+function boot(){categories.forEach(c=>{for(const id of ['category','filterCat']){const op=document.createElement('option');op.value=c;op.textContent=c;$(id).appendChild(op)}});month=new Date(new Date().getFullYear(),new Date().getMonth(),1);bindings();loadRates();reload().then(()=>secureStart())}
 boot();
 })();
 </script>
