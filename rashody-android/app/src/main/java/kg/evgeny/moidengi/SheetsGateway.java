@@ -11,6 +11,8 @@ import com.google.android.gms.auth.api.identity.AuthorizationResult;
 import com.google.android.gms.auth.api.identity.Identity;
 import com.google.android.gms.auth.api.identity.AuthorizationClient;
 import com.google.android.gms.common.api.Scope;
+import com.google.android.gms.common.ConnectionResult;
+import com.google.android.gms.common.GoogleApiAvailability;
 import org.json.JSONArray;
 import org.json.JSONObject;
 import java.io.InputStream;
@@ -75,6 +77,14 @@ public final class SheetsGateway {
     private void authorize() {
         if (authorizing || closed) return;
         authorizing = true;
+        // Play Services can be unavailable in offline mode or on devices
+        // without Google apps. Never cover the WebView with an endless
+        // "Enable Google Play services" system dialog.
+        if (GoogleApiAvailability.getInstance()
+            .isGooglePlayServicesAvailable(activity) != ConnectionResult.SUCCESS) {
+            authFailure("Сервисы Google Play недоступны. Проверь подключение Google позже");
+            return;
+        }
         AuthorizationRequest request = AuthorizationRequest.builder()
             .setRequestedScopes(Arrays.asList(new Scope(SCOPE)))
             .build();
