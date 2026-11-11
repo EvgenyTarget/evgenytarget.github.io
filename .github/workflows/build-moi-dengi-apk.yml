@@ -13,7 +13,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: moi-dengi-apk-build
@@ -80,12 +80,12 @@ jobs:
           APK="rashody-android/app/build/outputs/apk/debug/app-debug.apk"
           test -s "$APK"
           "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs "$APK"
-          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$APK" | grep "^package: name='kg.evgeny.moidengi.sheets'"
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$APK" | grep "^package: name='kg.evgeny.moidengi.sheets.next'"
           "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$APK" | grep "sdkVersion:'26'"
           test "$(wc -c < "$APK")" -gt 5000
           unzip -p "$APK" assets/index.html | grep -q 'nativeSheets'
           unzip -p "$APK" assets/index.html | grep -q 'nativeSheets'
-          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$APK" | grep "versionName='2.1.0'"
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$APK" | grep "versionName='2.2.0'"
 
       - name: Enable KVM for Android emulator
         run: |
@@ -123,30 +123,3 @@ jobs:
           path: rashody-android/app/build/outputs/apk/debug/app-debug.apk
           retention-days: 30
           if-no-files-found: error
-
-      - name: Publish direct APK download
-        run: |
-          set -euo pipefail
-          # Keep the built APK outside the working tree while checking out
-          # the newest branch HEAD. This avoids binary rebase conflicts.
-          cp rashody-android/app/build/outputs/apk/debug/app-debug.apk /tmp/moi-dengi.apk
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          for attempt in 1 2 3; do
-            git fetch origin main
-            git reset --hard origin/main
-            mkdir -p rashody-android/downloads
-            cp /tmp/moi-dengi.apk rashody-android/downloads/moi-dengi.apk
-            git add -f rashody-android/downloads/moi-dengi.apk
-            if git diff --cached --quiet; then
-              echo "APK is already current"
-              exit 0
-            fi
-            git commit -m "chore: publish Moi Dengi APK [skip ci]"
-            if git push origin HEAD:main; then
-              exit 0
-            fi
-          done
-          echo "Could not publish APK without racing other commits" >&2
-          exit 1
-

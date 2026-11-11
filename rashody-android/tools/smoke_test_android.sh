@@ -4,7 +4,7 @@
 set -euo pipefail
 
 APK="rashody-android/app/build/outputs/apk/debug/app-debug.apk"
-PKG="kg.evgeny.moidengi.sheets"
+PKG="kg.evgeny.moidengi.sheets.next"
 test -s "$APK"
 adb install -r "$APK"
 # This emulator has no signed-in Google account; the system OAuth
