@@ -131,6 +131,24 @@ button:active{transform:scale(.965)}
 #secure-pair button.secondary{background:#eef4ec;color:#214236}
 #secure-pair code{display:block;max-width:100%;overflow-wrap:anywhere;max-height:90px;overflow:auto;font-family:monospace;font-size:10px;background:#f4f6f2;color:#173025;border-radius:9px;padding:9px;margin-top:10px}
 #secure-pair .tiny{font-size:11px;margin:9px 0 0}
+
+/* Android landscape and reduced-motion support: avoid off-screen controls. */
+@media (orientation:landscape) and (max-height:560px) {
+  #app{padding-top:12px;padding-bottom:100px}
+  .top{margin-bottom:8px}
+  .hero{min-height:180px;padding:18px 22px}
+  .hero-top{margin-bottom:13px}
+  .hero .amount{font-size:clamp(30px,5vw,47px);margin:7px 0 11px}
+  .hero .meta{margin-top:3px}
+  .month-nav{margin:8px 0 12px}
+  .nav{height:56px;border-radius:17px}
+  .nav-btn{font-size:9px;gap:2px}
+  .addnav{width:45px;height:45px;margin-top:-7px;border-radius:14px}
+}
+@media (prefers-reduced-motion:reduce) {
+  *,*::before,*::after{animation-duration:.01ms!important;
+    animation-iteration-count:1!important;scroll-behavior:auto!important}
+}
 </style>
 </head>
 <body>
