@@ -1,0 +1,33 @@
+name: Export official Android APK signing tool
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/export-apk-signing-tool.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  export-tools:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - name: Configure Android build tools
+        run: |
+          set -euo pipefail
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install "build-tools;35.0.0"
+          test -s "$ANDROID_HOME/build-tools/35.0.0/lib/apksigner.jar"
+          mkdir -p /tmp/android-tools
+          cp "$ANDROID_HOME/build-tools/35.0.0/lib/apksigner.jar" /tmp/android-tools/apksigner.jar
+          cp "$ANDROID_HOME/build-tools/35.0.0/zipalign" /tmp/android-tools/zipalign
+          sha256sum /tmp/android-tools/apksigner.jar /tmp/android-tools/zipalign
+      - name: Export signing utility for offline app signing
+        uses: actions/upload-artifact@v4
+        with:
+          name: Official-Android-35-Signing-Tools
+          path: /tmp/android-tools/
+          retention-days: 7
+          if-no-files-found: error
