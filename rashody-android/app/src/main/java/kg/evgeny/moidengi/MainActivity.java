@@ -10,7 +10,6 @@ import android.view.ViewGroup;
 import android.view.WindowInsets;
 import android.view.WindowManager;
 import android.widget.FrameLayout;
-import android.webkit.WebBackForwardList;
 import android.graphics.Color;
 import android.os.Bundle;
 import android.webkit.WebResourceRequest;
@@ -100,7 +99,17 @@ public final class MainActivity extends Activity {
                         WebResourceResponse response=new WebResourceResponse("text/html","UTF-8",input);
                         response.setStatusCodeAndReasonPhrase(200,"OK");
                         Map<String,String> headers=new HashMap<>();
-                        headers.put("Cache-Control","no-store");headers.put("X-Content-Type-Options","nosniff");
+                        headers.put("Cache-Control","no-store");
+                        headers.put("X-Content-Type-Options","nosniff");
+                        headers.put("Referrer-Policy","no-referrer");
+                        // This page has privileged Android SheetsBridge access.
+                        // Never allow remote frames or externally hosted scripts.
+                        headers.put("Content-Security-Policy",
+                            "default-src 'none'; script-src 'unsafe-inline'; " +
+                            "style-src 'unsafe-inline'; img-src 'self' data:; " +
+                            "connect-src 'self' https://open.er-api.com; " +
+                            "frame-src 'none'; object-src 'none'; " +
+                            "base-uri 'none'; form-action 'none'");
                         response.setResponseHeaders(headers);
                         return response;
                     } catch(Exception e) {
