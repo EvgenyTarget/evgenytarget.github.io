@@ -47,6 +47,14 @@ jobs:
         with:
           gradle-version: '8.9'
 
+      - name: Verify orientation and security source invariants
+        run: |
+          grep -q 'configChanges="screenLayout|orientation|screenSize|smallestScreenSize|keyboard|keyboardHidden"' rashody-android/app/src/main/AndroidManifest.xml
+          grep -q 'onConfigurationChanged' rashody-android/app/src/main/java/kg/evgeny/moidengi/MainActivity.java
+          grep -q 'Content-Security-Policy' rashody-android/app/src/main/java/kg/evgeny/moidengi/MainActivity.java
+          grep -q 'android:allowBackup="false"' rashody-android/app/src/main/AndroidManifest.xml
+          grep -q 'android:usesCleartextTraffic="false"' rashody-android/app/src/main/AndroidManifest.xml
+
       - name: Validate Android UI JavaScript
         run: |
           python3 - <<'PY'
@@ -76,7 +84,79 @@ jobs:
           test "$(wc -c < "$APK")" -gt 5000
           unzip -p "$APK" assets/index.html | grep -q 'nativeSheets'
           unzip -p "$APK" assets/index.html | grep -q 'nativeSheets'
-          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$APK" | grep "versionName='2.0.0'"
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$APK" | grep "versionName='2.1.0'"
+
+      - name: Enable KVM for Android emulator
+        run: |
+          if test -e /dev/kvm; then
+            echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+            sudo udevadm control --reload-rules
+            sudo udevadm trigger --name-match=kvm
+          else
+            echo "No KVM available; emulator may be slow"
+          fi
+
+      - name: Android device smoke test
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 34
+          target: google_apis
+          arch: x86_64
+          profile: pixel_4
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -camera-back none
+          script: |
+            set -euo pipefail
+            APK=rashody-android/app/build/outputs/apk/debug/app-debug.apk
+            PKG=kg.evgeny.moidengi.sheets
+            adb install -r "$APK"
+            adb shell settings put system accelerometer_rotation 0
+            adb shell cmd window user-rotation lock 0
+            adb shell am start -W -n "$PKG/kg.evgeny.moidengi.MainActivity"
+            sleep 12
+            PID="$(adb shell pidof "$PKG" | tr -d '\r')"
+            test -n "$PID"
+            adb exec-out screencap -p > /tmp/moi-dengi-portrait.png
+            adb shell cmd window user-rotation lock 1
+            sleep 8
+            test "$(adb shell pidof "$PKG" | tr -d '\r')" = "$PID"
+            adb exec-out screencap -p > /tmp/moi-dengi-landscape.png
+            adb shell cmd window user-rotation lock 0
+            sleep 6
+            test "$(adb shell pidof "$PKG" | tr -d '\r')" = "$PID"
+            adb exec-out screencap -p > /tmp/moi-dengi-portrait-again.png
+            python3 -m pip install --quiet Pillow
+            python3 - <<'PY'
+            from PIL import Image
+            names=['portrait','landscape','portrait-again']
+            shapes=[]
+            for name in names:
+              im=Image.open('/tmp/moi-dengi-'+name+'.png').convert('RGB')
+              w,h=im.size
+              pix=im.load()
+              # A genuine finance home screen contains the dark green hero card.
+              # A fully blank WebView, or a white Google error, fails this test.
+              sampled=0
+              dark=0
+              for y in range(0,h,8):
+                for x in range(0,w,8):
+                  r,g,b=pix[x,y]
+                  sampled+=1
+                  if r<95 and g<140 and b<110:dark+=1
+              ratio=dark/sampled
+              print(name,(w,h),'dark-ratio=',round(ratio,4),flush=True)
+              if ratio<0.035:
+                raise AssertionError(name+' screenshot is blank or missing finance UI')
+              shapes.append((w,h))
+            assert shapes[0][1]>shapes[0][0], 'Expected portrait startup'
+            assert shapes[1][0]>shapes[1][1], 'Android did not rotate to landscape'
+            assert shapes[2][1]>shapes[2][0], 'Android did not return to portrait'
+            print('Rotation, layout and renderer process smoke tests passed')
+            PY
+            adb shell dumpsys meminfo "$PKG" | head -55
+            if adb logcat -d -v brief | grep -E 'FATAL EXCEPTION.*kg.evgeny.moidengi|crash.*kg.evgeny.moidengi'; then
+              echo 'Finance app crash detected'
+              exit 1
+            fi
 
       - name: Keep a downloadable build artifact
         uses: actions/upload-artifact@v4
@@ -111,33 +191,4 @@ jobs:
           done
           echo "Could not publish APK without racing other commits" >&2
           exit 1
-
-      - name: Enable KVM for Android emulator
-        run: |
-          if test -e /dev/kvm; then
-            echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
-            sudo udevadm control --reload-rules
-            sudo udevadm trigger --name-match=kvm
-          else
-            echo "No KVM available; emulator may be slow"
-          fi
-
-      - name: Android device smoke test
-        continue-on-error: true
-        uses: reactivecircus/android-emulator-runner@v2
-        with:
-          api-level: 34
-          target: google_apis
-          arch: x86_64
-          profile: pixel_4
-          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -camera-back none
-          script: |
-            set -e
-            adb install -r rashody-android/app/build/outputs/apk/debug/app-debug.apk
-            adb shell am start -W -n kg.evgeny.moidengi.sheets/kg.evgeny.moidengi.MainActivity
-            sleep 10
-            adb shell dumpsys activity activities | grep 'kg.evgeny.moidengi'
-            adb shell pidof kg.evgeny.moidengi.sheets
-            adb shell screencap -p /sdcard/moi-dengi.png
-            adb pull /sdcard/moi-dengi.png /tmp/moi-dengi-emulator.png
 
