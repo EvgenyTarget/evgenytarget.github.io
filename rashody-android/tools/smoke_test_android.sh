@@ -55,7 +55,7 @@ for name in names:
             if r<100 and g<145 and b<110 and g>=r+8 and g>=b+5: dark+=1
     ratio=dark/total
     print(name,(width,height),"visible-dark-content:",round(ratio,4),flush=True)
-    assert ratio>=0.045,name+" screenshot lacks the dark-green finance UI"
+    assert ratio>=0.18,name+" screenshot lacks the unobscured finance UI (may be blocked by system dialog)"
     dims.append((width,height))
 assert dims[0][1]>dims[0][0],"Startup was not portrait"
 assert dims[1][0]>dims[1][1],"Android did not rotate to landscape"
