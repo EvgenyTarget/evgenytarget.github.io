@@ -30,7 +30,7 @@ assert original in text
 text=text.replace(original,'''&& "open.er-api.com".equals(uri.getHost()) ||
                     "https".equals(uri.getScheme())
                     && "raw.githubusercontent.com".equals(uri.getHost())
-                    && "/EvgenyTarget/evgenytarget.github.io/main/rashody/data.enc.json".equals(uri.getPath())))''')
+                    && "/EvgenyTarget/evgenytarget.github.io/main/rashody/data-v3.enc.json".equals(uri.getPath())))''')
 # Keep one trusted external finance-feed endpoint and the currency-rate endpoint.
 csp="connect-src 'self' https://open.er-api.com; "
 assert csp in text

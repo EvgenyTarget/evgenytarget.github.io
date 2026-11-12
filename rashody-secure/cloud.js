@@ -2,7 +2,7 @@
 // The public GitHub feed is authenticated AES-GCM ciphertext only.
 // The secret is inserted OFFLINE after CI builds the unsigned-data APK.
 // Never commit the real secret or a decrypted finance entry.
-const FINANCE_FEED='https://raw.githubusercontent.com/EvgenyTarget/evgenytarget.github.io/main/rashody/data.enc.json';
+const FINANCE_FEED='https://raw.githubusercontent.com/EvgenyTarget/evgenytarget.github.io/main/rashody/data-v3.enc.json';
 const FINANCE_DECRYPTION_KEY='__MOI_DENGI_PRIVATE_BASE64URL_KEY__';
 const FINANCE_CLOUD_CACHE='my-private-finance-cache-v3';
 const base64Bytes=s=>{
