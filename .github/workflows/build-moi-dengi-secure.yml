@@ -1,0 +1,79 @@
+name: Build private-data finance app shell (no public APK)
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'rashody-secure/**'
+      - '.github/workflows/build-moi-dengi-secure.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-private-finance-shell:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Install SDK
+        run: |
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install "platforms;android-35" "build-tools;35.0.0"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+      - name: Prepare isolated private-data app sources
+        run: python3 rashody-secure/patch.py
+      - name: Check generated JavaScript and that no secrets are baked in
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          t=Path('/tmp/moi-dengi-secure/app/src/main/assets/index.html').read_text()
+          assert t.count('__MOI_DENGI_PRIVATE_BASE64URL_KEY__')==1
+          assert 'SheetsBridge.request' in t
+          assert 'sheets=null;' in Path('/tmp/moi-dengi-secure/app/src/main/java/kg/evgeny/moidengi/MainActivity.java').read_text()
+          js=re.search(r'<script>([\s\S]*?)</script>',t).group(1)
+          Path('/tmp/moi-dengi-secure-ui.js').write_text(js)
+          PY
+          node --check /tmp/moi-dengi-secure-ui.js
+      - name: Build generic signed Android APK
+        run: gradle --no-daemon -p /tmp/moi-dengi-secure :app:assembleDebug
+      - name: Verify package, APK and placeholder
+        run: |
+          set -euo pipefail
+          APK=/tmp/moi-dengi-secure/app/build/outputs/apk/debug/app-debug.apk
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose "$APK"
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$APK" | grep "package: name='kg.evgeny.moidengi.secure'"
+          unzip -p "$APK" assets/index.html | grep -q '__MOI_DENGI_PRIVATE_BASE64URL_KEY__'
+          test "$(wc -c < "$APK")" -gt 100000
+      - name: Android 15 launch, rotation and no blank screen test
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          profile: pixel_4
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -camera-back none
+          script: bash /tmp/moi-dengi-secure/tools/smoke_test_android.sh
+      - name: Save UI screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: MoiDengi-Secure-Android-Screenshots
+          path: /tmp/moi-dengi-*.png
+          retention-days: 5
+          if-no-files-found: ignore
+      - name: Save GENERIC APK without private key
+        uses: actions/upload-artifact@v4
+        with:
+          name: MoiDengi-Secure-Generic-No-Keys
+          path: /tmp/moi-dengi-secure/app/build/outputs/apk/debug/app-debug.apk
+          retention-days: 15
+          if-no-files-found: error
